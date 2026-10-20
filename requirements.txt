@@ -1,0 +1,4 @@
+alpaca-py==0.43.5
+pandas==2.3.3
+numpy==2.0.2
+exchange-calendars==4.11.2
