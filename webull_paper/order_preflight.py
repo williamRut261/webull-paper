@@ -26,12 +26,15 @@ def main():
         raise RuntimeError("The designated Webull SANDBOX index 0 is not CASH")
     account_id = accounts[0]["account_id"]
     account_digest = hashlib.sha256(str(account_id).encode()).hexdigest()
+    expected_pin = os.environ.get("WEBULL_PAPER_ACCOUNT_SHA256", "")
+    pin_matches = bool(len(expected_pin) == 64 and account_digest == expected_pin)
     print("WEBULL_SANDBOX_ACCOUNT_FINGERPRINT " + json.dumps({
         "account_index": 0, "account_count": len(accounts),
-        "account_type": "CASH", "account_pin_matches": (
-            account_digest == os.environ.get("WEBULL_PAPER_ACCOUNT_SHA256", "")),
+        "account_type": "CASH", "account_pin_matches": pin_matches,
         "orders_submitted": 0
     }, sort_keys=True), flush=True)
+    if not pin_matches:
+        raise RuntimeError("Webull PAPER account pin missing or mismatched; no orders")
     history_guard(trade.order_v3, account_id, datetime.now(NY).date().isoformat())
     print("WEBULL_SANDBOX_ORDER_READINESS " + json.dumps({
         "sandbox_only": True, "account_count": len(accounts),
