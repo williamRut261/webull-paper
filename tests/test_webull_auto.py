@@ -317,6 +317,9 @@ class PaperAutomationSafetyTests(unittest.TestCase):
         # Stage 50 minutes early, preserving the near-close decision.
         self.assertIn('cron: "58 14 * * 1-5"', data)
         self.assertIn('timeout-minutes: 120', data)
+        self.assertIn("if: github.event_name == 'schedule'", data)
+        self.assertIn('api.sandbox.webull.com', Path('webull_paper/automatic.py').read_text())
+        self.assertNotIn('api.webull.com', Path('webull_paper/automatic.py').read_text())
 
     def test_missed_market_window_is_fatal_not_green_noop(self):
         # Oct. 13 actual 16:08 ET GitHub start used to silently exit 0.
