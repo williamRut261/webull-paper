@@ -1,0 +1,25 @@
+{
+  "source_url": "https://app.composer.trade/symphony/R9gMXtESOZq5kDU1lUvM/factsheet",
+  "source_id": "R9gMXtESOZq5kDU1lUvM",
+  "copy_id": "pL4dwAfAI5juLc3bNn95",
+  "original_attachment_sha256": [
+    "66b30984ad513740fc686de092037eab1ab211fbc1e249006a916e5982d859da",
+    "3f653ca35aae2a90d2a12baba1e78b08389b641bb969476641077818839652e1"
+  ],
+  "executable_fields_match_between_sources": true,
+  "stored_source_executable_fields_match": true,
+  "stored_strategy_sha256": "56bf70e0940c6f713a61d5ea757231268a25a280ef8ef777a9a9a47df2112edd",
+  "node_counts": {
+    "root": 1,
+    "wt-cash-equal": 87,
+    "if": 67,
+    "if-child": 134,
+    "asset": 177,
+    "group": 20,
+    "wt-cash-specified": 5,
+    "wt-inverse-vol": 1,
+    "filter": 9
+  },
+  "node_count": 501,
+  "source_selection": "Original export matching the user-provided factsheet ID; copied export has equivalent executable fields."
+}
