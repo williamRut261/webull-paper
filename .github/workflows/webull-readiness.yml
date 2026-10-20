@@ -1,10 +1,12 @@
-name: Webull strategy PaperTrade Allocation Plan (read-only)
+name: Webull PaperTrade Allocation Plan (read-only)
+# Read-only; run manually or when this workflow changes on protected main.
+# No PR-triggered jobs with sandbox credentials in this public repository.
 on:
-  pull_request:
-    paths:
-      - 'webull_paper/**'
-      - '.github/workflows/webull-readiness.yml'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/webull-readiness.yml'
 
 permissions:
   contents: read
@@ -21,13 +23,14 @@ jobs:
       PYTHONPATH: .
       WEBULL_PAPER_APP_KEY: ${{ secrets.WEBULL_PAPER_APP_KEY }}
       WEBULL_PAPER_APP_SECRET: ${{ secrets.WEBULL_PAPER_APP_SECRET }}
+      WEBULL_PAPER_ACCOUNT_SHA256: ${{ secrets.WEBULL_PAPER_ACCOUNT_SHA256 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install original strategy and official Webull SDK
-        run: python -m pip install -r requirements.txt webull-openapi-python-sdk
+        run: python -m pip install -r requirements.txt webull-openapi-python-sdk==3.0.3
       - name: Compute original strategy allocation and inspect Webull CASH sandbox account (no orders)
         run: python -m webull_paper.paper_orders
       - name: Audit timestamp freshness for all 69 Webull snapshots (GET only)
