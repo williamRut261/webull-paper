@@ -1,4 +1,4 @@
-**Activation paused until the new repository has sandbox credentials and the old scheduled workflow is disabled.**
+**Automatic Webull sandbox paper trading is enabled on weekday scheduled sessions only. Manual workflow dispatch cannot place orders. The old private scheduler is disabled.**
 
 # Webull strategy PaperTrade (sandbox only)
 
@@ -13,9 +13,9 @@ This is a separate Webull SANDBOX integration. Its weekday automatic paper order
 
 ## Safe read-only check
 Command: `python -m webull_paper.paper_orders`. Requires repository secrets `WEBULL_PAPER_APP_KEY` and `WEBULL_PAPER_APP_SECRET`, hard-coded endpoint `api.sandbox.webull.com`.
-The GitHub Actions workflow `.github/workflows/webull-readiness.yml` runs this read-only check on demand and on relevant pull requests; it is **not** automatically scheduled. It also executes `python -m webull_paper.audit_quotes`, a market-data GET-only freshness audit for all 69 symbols. Neither step submits or previews orders.
+The GitHub Actions workflow `.github/workflows/webull-readiness.yml` runs this read-only check on demand; it is **not** automatically scheduled and does not use pull-request access to secrets. It also executes `python -m webull_paper.audit_quotes`, a market-data GET-only freshness audit for all 69 symbols. Neither step submits or previews orders.
 
-## Remaining before automatic sandbox order submission
+## First scheduled execution: safeguards and remaining verification
 1. Confirm historical and intraday signal coverage, including the 15-minute sandbox market-data delay. Fresh 3-minute snapshots should not be assumed or required for a delayed-data strategy.
 2. Validate actual ticker fractionability and duplicate-order protections.
 3. The scheduled Webull SANDBOX runner uses `python -m webull_paper.automatic`. It explicitly activates *only* test-account orders, guards unique client order IDs and open/history checks, previews every order, rechecks portfolio and cash, and verifies each fill before the next order. No live brokerage endpoint is configured.
@@ -24,7 +24,7 @@ The GitHub Actions workflow `.github/workflows/webull-readiness.yml` runs this r
 
 Manual read-only plan: `python -m webull_paper.paper_orders`. Automatic sandbox order driver: `python -m webull_paper.automatic`; it requires verified sandbox credentials, `WEBULL_PAPER_EXECUTE_ENABLED=true`, and `WEBULL_PAPER_ACCOUNT_INDEX=0`. The workflow supplies those two activation settings for scheduled paper-only runs. All trades remain paper/simulated, never real money.
 
-**Schedule reliability:** The paper runner now stages at **1:08 PM Eastern (12:08 PM Houston)** and waits until the **3:48 PM Eastern (2:48 PM Houston)** signal, allowing approximately **160 minutes** of scheduling headroom. GitHub runner timeout is 240 minutes. This may consume thousands of billable GitHub Actions minutes per month on a private repo. Runs arriving after 3:54 PM Eastern fail visibly with `PAPER_MISSED_WINDOW` instead of silently reporting success. This does not bypass quote freshness, account pinning, duplicate-order checks or preview/fill verification.
+**Schedule reliability:** The paper runner now stages at **2:58 PM Eastern (1:58 PM Houston)** and waits until the **3:48 PM Eastern (2:48 PM Houston)** signal, allowing approximately **50 minutes** of scheduling headroom. GitHub runner timeout is 120 minutes; this repository is public and uses standard GitHub-hosted runners. Runs arriving after 3:54 PM Eastern fail visibly with `PAPER_MISSED_WINDOW` instead of silently reporting success. This does not bypass quote freshness, account pinning, duplicate-order checks or preview/fill verification.
 
 ## Oct 14 market-data failure repair
 
