@@ -1,4 +1,4 @@
-name: strategy Webull Paper Auto-Trading (SANDBOX ONLY)
+name: Webull Paper Auto-Trading (SANDBOX ONLY)
 
 on:
   workflow_dispatch:
@@ -18,8 +18,9 @@ concurrency:
 
 jobs:
   run-webull-sandbox:
-    # Do not submit even sandbox orders until the old scheduled runner is disabled.
-    if: vars.WEBULL_PAPER_ACTIVE == 'true'
+    # Owner activated after read-only API, cash-account-pin and order-history checks passed.
+    # Only scheduled sessions may attempt SANDBOX orders; manual dispatch never trades.
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
