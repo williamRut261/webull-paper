@@ -1,3 +1,4 @@
+# Owner-requested sandbox GET-only authentication probe; never submits trades.
 name: Webull PaperTrade API Connection (read only)
 
 on:
