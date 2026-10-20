@@ -1,22 +1,31 @@
 # Webull Paper
 
-Webull OpenAPI sandbox-only trading research and paper execution.
+Scheduled Webull OpenAPI **sandbox-only** paper-trading bot. This repository is public; its GitHub-hosted standard runner does not consume the private-repository Actions minute allowance.
 
-**No real-money trading.** The previous private-repository scheduler was retired on October 19, 2026. This public repository's scheduled paper job remains inactive until its sandbox secrets, cash-account pin, and activation flag are configured and independently verified.
+## Activation status
 
-## Setup
-Store these GitHub Actions secrets (never commit them):
-- `WEBULL_PAPER_APP_KEY`
-- `WEBULL_PAPER_APP_SECRET`
-- `WEBULL_PAPER_ACCOUNT_SHA256` — SHA-256 hexadecimal digest of the verified sandbox CASH account identifier
+- **Automatic sandbox orders:** enabled for scheduled weekday GitHub Actions runs only.
+- **Schedule:** 2:58 PM New York / 1:58 PM Houston; evaluate at 3:48 PM New York / 2:48 PM Houston.
+- **Manual workflow dispatch:** never places orders (the trading job is skipped).
+- **Old private scheduler:** retired with its schedule removed and job hard-disabled.
+- **Real-money trading:** not supported by this repository; fixed SDK host `api.sandbox.webull.com`.
 
-The paper execution workflow also requires the repository variable `WEBULL_PAPER_ACTIVE` set to exactly `true`. Leave it unset/false until the read-only sandbox connection and account-pin match have passed. Never add these secrets as ordinary repository variables or source files. The previous scheduler is already retired.
+Previous read-only production-like sandbox checks confirmed HTTP 200 authentication, the designated CASH account's SHA-256 pin, and readable order history. **Actual first post-cutover sandbox fills and within-session market-data freshness remain unverified.** The bot aborts instead of trading on stale/invalid required quotes, mismatched account, incomplete order history, incorrect signal timing, or unsafe order responses. GitHub scheduled jobs are best-effort and may run late.
 
-The strategy rules and historical data approximations may differ from a broker's calculations. Automation checks prevent duplicate orders and require verified market timestamps.
+## Required GitHub Actions secrets
 
-## Cutover checks
+Keep these as repository **secrets**, not variables or code:
 
-1. Set the three GitHub Actions **repository secrets** listed above via Settings > Secrets and variables > Actions.
-2. Run the read-only Webull PaperTrade API Connection workflow and Webull PaperTrade Allocation Plan workflow. Confirm API access and `account_pin_matches: true` in the GET-only order-preflight output.
-3. Only after checking the two read-only runs, set the GitHub Actions **repository variable** `WEBULL_PAPER_ACTIVE` to `true`. This activates only the sandbox job; never a real-money endpoint.
-4. Check the first scheduled paper session for a successful real sandbox order and verify no duplicate order history.
+- `WEBULL_PAPER_APP_KEY` — sandbox key only
+- `WEBULL_PAPER_APP_SECRET` — sandbox secret only
+- `WEBULL_PAPER_ACCOUNT_SHA256` — verified CASH account-ID SHA-256
+
+The scheduling gate is maintained in `.github/workflows/webull-auto-execute.yml`: `github.event_name == 'schedule'`. No additional repository activation variable is needed.
+
+## Read-only checks
+
+- `.github/workflows/webull-paper-connection.yml`: sandbox authentication and GET-only access.
+- `.github/workflows/webull-readiness.yml`: allocation, quote coverage, pinned cash account, and order history; **never submits an order**.
+- `.github/workflows/tests.yml`: mocked offline regression tests, no account access.
+
+Strategy timing, fill sequencing, duplicate-order checks, and 99% maximum intended allocation are preserved from the previous private sandbox bot. Market-data differences from other brokers can produce different allocations.
