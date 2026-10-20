@@ -1,0 +1,65 @@
+name: strategy Webull Paper Auto-Trading (SANDBOX ONLY)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Stage at 14:58 ET / 13:58 Houston, 50 minutes before the 15:48 ET signal.
+    # GitHub Actions schedules are best-effort; the runner waits until signal time.
+    # This saves ~110 waiting minutes per trading weekday versus the prior 160-minute stage.
+    - cron: "58 14 * * 1-5"
+      timezone: "America/New_York"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webull-paper-order
+  cancel-in-progress: false
+
+jobs:
+  run-webull-sandbox:
+    # Do not submit even sandbox orders until the old scheduled runner is disabled.
+    if: vars.WEBULL_PAPER_ACTIVE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PYTHONPATH: .
+      WEBULL_PAPER_APP_KEY: ${{ secrets.WEBULL_PAPER_APP_KEY }}
+      WEBULL_PAPER_APP_SECRET: ${{ secrets.WEBULL_PAPER_APP_SECRET }}
+      WEBULL_PAPER_ACCOUNT_SHA256: ${{ secrets.WEBULL_PAPER_ACCOUNT_SHA256 }}
+      WEBULL_PAPER_EXECUTE_ENABLED: "true"
+      WEBULL_PAPER_ACCOUNT_INDEX: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Webull PaperTrade SDK and strategy dependencies
+        run: python -m pip install -r requirements.txt webull-openapi-python-sdk==3.0.3
+      - name: Eastern trading date
+        id: date
+        run: echo "day=$(TZ=America/New_York date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - name: Restore Webull paper daily execution claim
+        id: state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/webull-paper
+          key: webull-public-paper-v1-${{ steps.date.outputs.day }}
+      - name: Execute WEBULL SANDBOX paper orders only
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          python -m webull_paper.automatic 2>&1 | tee logs/webull-paper.log
+      - name: Save daily execution claim, including failures
+        if: always() && steps.state.outputs.cache-hit != 'true' && hashFiles('state/webull-paper/*.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/webull-paper
+          key: webull-public-paper-v1-${{ steps.date.outputs.day }}
+      - name: Preserve paper order audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webull-sandbox-orders-${{ github.run_id }}-${{ github.run_attempt }}
+          path: logs/
+          retention-days: 30
