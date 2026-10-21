@@ -16,6 +16,7 @@ from webull_paper.signal_dry_run import SANDBOX, NY
 from webull_paper.paper_orders import (
     MAX_EXPOSURE, MIN_ORDER_USD, STATE_DIR, floor, money, order_payload,
     portfolio, select_account, session_guard, targets_for_now, verified, SnapshotPrices,
+    collect_snapshots,
 )
 
 PAPER_HOST = "api.sandbox.webull.com"
@@ -125,9 +126,9 @@ def detail_status(payload, client_order_id):
     return state, row
 
 
-def preview_and_place(trade, account_id, payload, before_submit=None):
+def preview_and_place(trade, account_id, payload, before_submit=None, session_check=close_window):
     """Place exactly once. A timeout/uncertain receipt must NEVER be retried."""
-    close_window(datetime.now(NY))
+    session_check(datetime.now(NY))
     if before_submit is not None:
         before_submit()
     cid = payload["client_order_id"]
@@ -139,7 +140,7 @@ def preview_and_place(trade, account_id, payload, before_submit=None):
             preview.get("error") or preview.get("error_code") or
             preview.get("success") is False):
         raise RuntimeError("Webull paper order preview rejected its payload")
-    close_window(datetime.now(NY))
+    session_check(datetime.now(NY))
     if before_submit is not None:
         before_submit()
     response = verified(trade.order_v3.place_order(account_id, [payload]),
@@ -179,8 +180,8 @@ def wait_for_full_fill(trade, account_id, cid, qty):
     raise RuntimeError("Paper order still not fully filled: stop without resubmitting")
 
 
-def checked_portfolio(trade, account_id):
-    equity, cash, positions = portfolio(trade, account_id)
+def checked_portfolio(trade, account_id, allowed_extra=frozenset()):
+    equity, cash, positions = portfolio(trade, account_id, allowed_extra=allowed_extra)
     if equity < 100 or cash < 0:
         raise RuntimeError("Unusable sandbox paper account cash/equity")
     exposure = sum(p["value"] for p in positions.values())
@@ -189,13 +190,19 @@ def checked_portfolio(trade, account_id):
     return equity, cash, positions
 
 
-def make_orders(trade, account_id, targets, quotes, day):
+def make_orders(trade, account_id, targets, quotes, day, expected_exposure=MAX_EXPOSURE,
+                allowed_extra=frozenset()):
     """Recalculate balances after EVERY completed sale and buy."""
-    if not targets or not math.isclose(sum(targets.values()), MAX_EXPOSURE,
+    if not targets or not math.isclose(sum(targets.values()), expected_exposure,
                                        abs_tol=1e-6):
         raise RuntimeError("Unexpected strategy weights")
+    if not 0 < expected_exposure <= MAX_EXPOSURE:
+        raise RuntimeError("Invalid strategy sleeve target")
+    from strategy_engine import ORIGINAL_EXECUTION_ASSETS
+    if set(targets) - ORIGINAL_EXECUTION_ASSETS:
+        raise RuntimeError("Trader symbols cannot enter Beethoven target weights")
     count = 0
-    equity, cash, holdings = checked_portfolio(trade, account_id)
+    equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
     if not isinstance(quotes, SnapshotPrices):
         raise RuntimeError("No verified timestamped Webull paper quotes")
     required = set(targets) | set(holdings)
@@ -203,9 +210,15 @@ def make_orders(trade, account_id, targets, quotes, day):
         close_window(datetime.now(NY))
         quotes.validate(required, datetime.now(NY))
     revalidate()  # All required sell/buy/signal inputs before the first write.
+    # A tiny remaining scanner position cannot be silently considered "flat".
+    if any(sym in allowed_extra and pos["value"] < MIN_ORDER_USD
+           for sym, pos in holdings.items()):
+        raise RuntimeError("Unliquidatable scanner position below $5; do not claim a clean exit")
     for symbol, position in sorted(holdings.items()):
         excess = position["value"] - equity * targets.get(symbol, 0)
-        if excess < max(MIN_ORDER_USD, equity * 0.01):
+        tolerance = MIN_ORDER_USD if symbol in allowed_extra else max(
+            MIN_ORDER_USD, equity * 0.01)
+        if excess < tolerance:
             continue
         close_window(datetime.now(NY))
         if symbol not in quotes or quotes[symbol] <= 0:
@@ -214,14 +227,14 @@ def make_orders(trade, account_id, targets, quotes, day):
         count += 1
         payload = order_payload(symbol, "SELL",
                                 min(excess, position["value"]), quotes[symbol],
-                                day, count)
+                                day, count, allowed_extra=allowed_extra)
         if float(payload["quantity"]) > position["qty"] + 1e-6:
             raise RuntimeError("Attempted paper sale exceeds owned shares")
         preview_and_place(trade, account_id, payload, before_submit=revalidate)
-        equity, cash, holdings = checked_portfolio(trade, account_id)
+        equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
     # Sell-before-buy: never proceed if a sale has not fully filled.
     for symbol, weight in sorted(targets.items()):
-        equity, cash, holdings = checked_portfolio(trade, account_id)
+        equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
         shortage = equity * weight - holdings.get(symbol, {}).get("value", 0)
         if shortage < max(MIN_ORDER_USD, equity * 0.01):
             continue
@@ -234,13 +247,13 @@ def make_orders(trade, account_id, targets, quotes, day):
         if amount < MIN_ORDER_USD:
             continue
         count += 1
-        payload = order_payload(symbol, "BUY", amount, quotes[symbol], day, count)
+        payload = order_payload(symbol, "BUY", amount, quotes[symbol], day, count, allowed_extra=allowed_extra)
         # Quantity * buffered market-data price may not exceed cash or headroom.
         reserved = float(payload["quantity"]) * quotes[symbol] * (1 + BUY_PRICE_BUFFER)
         if reserved > cash + 1e-6 or reserved + exposure > equity * MAX_EXPOSURE + 1e-6:
             raise RuntimeError("Paper order price/exposure guard failed")
         preview_and_place(trade, account_id, payload, before_submit=revalidate)
-        equity, cash, holdings = checked_portfolio(trade, account_id)
+        equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
     print("PAPER_REBALANCE_COMPLETE " + json.dumps({
         "order_count": count,
         "equity": round(equity, 2),
@@ -327,8 +340,35 @@ def main():
         return 0
     history_guard(trade.order_v3, account_id, day)
     targets, quotes = confirmed_signal(data, load_strategy(), now)
+    trader_enabled = os.getenv("WEBULL_TRADER_PAPER_ENABLED") == "true"
+    allowed_extra = frozenset()
+    expected_exposure = MAX_EXPOSURE
+    if trader_enabled:
+        from trader_combo.universe import CANDIDATES, BEETHOVEN_WEIGHT, TRADER_WEIGHT
+        allowed_extra = CANDIDATES
+        expected_exposure = BEETHOVEN_WEIGHT
+        targets = {symbol: weight * BEETHOVEN_WEIGHT / MAX_EXPOSURE
+                   for symbol, weight in targets.items()}
+        # Fetch today's fresh Webull trade timestamps for trader positions.
+        _, _, existing = checked_portfolio(trade, account_id, allowed_extra)
+        extra_held = sorted(set(existing) & allowed_extra)
+        if extra_held:
+            from trader_combo.provenance import verify_scanner_position_ownership
+            verify_scanner_position_ownership(trade.order_v3, account_id, extra_held)
+            extra_prices, _ = collect_snapshots(
+                data, extra_held, datetime.now(NY), require_fresh=True,
+                clock=lambda: datetime.now(NY))
+            quotes.update(extra_prices)
+            quotes.trade_times.update(extra_prices.trade_times)
+            quotes.required.update(extra_held)
+        print("PAPER_COMBINED_ALLOCATION " + json.dumps({
+            "beethoven_weight": BEETHOVEN_WEIGHT,
+            "scanner_weight": TRADER_WEIGHT,
+            "scanner_positions_to_close": extra_held,
+            "no_overnight_scanner_positions_intended": True
+        }, sort_keys=True), flush=True)
     close_window(datetime.now(NY))
-    equity, cash, held = checked_portfolio(trade, account_id)
+    equity, cash, held = checked_portfolio(trade, account_id, allowed_extra)
     print("PAPER_AUTO_SIGNAL " + json.dumps({
         "date": day, "paper_only": True, "cash": round(cash, 2),
         "equity": round(equity, 2), "targets": targets,
@@ -336,7 +376,8 @@ def main():
     # Re-check broker state immediately before any write.
     history_guard(trade.order_v3, account_id, day)
     claim_day(day)
-    make_orders(trade, account_id, targets, quotes, day)
+    make_orders(trade, account_id, targets, quotes, day,
+                expected_exposure=expected_exposure, allowed_extra=allowed_extra)
     return 0
 
 
