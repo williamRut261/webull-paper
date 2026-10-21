@@ -11,7 +11,9 @@ import math
 
 from trader_combo.scan import select_recent_signals
 from trader_combo.universe import MAX_POSITIONS, MAX_STOP_DISTANCE, MIN_STOP_DISTANCE
-from webull_paper.signal_dry_run import NY
+from zoneinfo import ZoneInfo
+
+NY = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
