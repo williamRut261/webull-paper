@@ -121,8 +121,8 @@ def run(daily, bars, start, end, cost_bps=10):
     issues, skipped = [], 0
     equity = {name: 10000. for name in exposures}
     prev_alloc = {name: {} for name in exposures}
-    matched = {"beethoven_99": 10000., "webull_80_19": 10000.}
-    matched_prior = {"beethoven_99": {}, "webull_80_19": {}}
+    matched = {"beethoven_99": 10000., "beethoven_80_cash_19": 10000., "webull_80_19": 10000.}
+    matched_prior = {"beethoven_99": {}, "beethoven_80_cash_19": {}, "webull_80_19": {}}
 
     def close_long():
         nonlocal long_rows, equity, prev_alloc
@@ -137,8 +137,8 @@ def run(daily, bars, start, end, cost_bps=10):
         if pair_rows:
             paired_windows.append(pair_rows)
         pair_rows = []
-        matched = {"beethoven_99": 10000., "webull_80_19": 10000.}
-        matched_prior = {"beethoven_99": {}, "webull_80_19": {}}
+        matched = {"beethoven_99": 10000., "beethoven_80_cash_19": 10000., "webull_80_19": 10000.}
+        matched_prior = {"beethoven_99": {}, "beethoven_80_cash_19": {}, "webull_80_19": {}}
 
     def period_return(weights, price_changes, exposure, holdings):
         target = {s: w*exposure for s, w in weights.items()}
@@ -201,9 +201,13 @@ def run(daily, bars, start, end, cost_bps=10):
                                       matched_prior["beethoven_99"])
             r80, w80 = period_return(weights, changes, .80,
                                       matched_prior["webull_80_19"])
+            r80_cash, w80_cash = period_return(weights, changes, .80,
+                                                matched_prior["beethoven_80_cash_19"])
             matched_prior["beethoven_99"] = w99
+            matched_prior["beethoven_80_cash_19"] = w80_cash
             matched_prior["webull_80_19"] = w80
             matched["beethoven_99"] *= (1+r99)
+            matched["beethoven_80_cash_19"] *= (1+r80_cash)
             matched["webull_80_19"] *= (1+r80+scanner_return)
             pair_rows.append({"date": day, **matched,
                               "orb_return_contribution": scanner_return,
@@ -225,7 +229,9 @@ def run(daily, bars, start, end, cost_bps=10):
                                 "no short window is labeled a three-year backtest. "
                                 "Missing scanner charts are disclosed; up to 20% missing is allowed "
                                 "as in the actual OG scanner gate. Historical listings cause gaps.")}
-    return long, paired, pd.DataFrame(trades), report_coverage
+    matched_days = set(paired.date) if not paired.empty else set()
+    chosen_trades = pd.DataFrame([x for x in trades if x["date"] in matched_days])
+    return long, paired, chosen_trades, report_coverage
 
 
 def stats(frame, column):
@@ -266,8 +272,11 @@ def main():
             "matched_period":([match.iloc[0]["date"],match.iloc[-1]["date"]] if not match.empty else None),
             "long":{k:stats(long,k) for k in
                      ("beethoven_99","beethoven_80_cash_19","beethoven_75_cash_25")},
-            "matched":{k:stats(match,k) for k in ("beethoven_99","webull_80_19")},
-            "matched_days":len(match),"orb_trades":len(trades),"coverage":coverage,
+            "matched":{k:stats(match,k) for k in ("beethoven_99","beethoven_80_cash_19","webull_80_19")},
+            "matched_days":len(match),"orb_trades":len(trades),
+            "orb_winning_trades":int((trades.net_pnl>0).sum()) if not trades.empty else 0,
+            "orb_total_net_pnl_dollars":round(float(trades.net_pnl.sum()),2) if not trades.empty else 0.,
+            "coverage":coverage,
             "LIMITATION":"Indicative daily-close Beethoven simulation with estimated actual turnover; ORB 5m bar-open fills. "
             "Not exact live 15:48 ET or broker execution; no complete 2024-2026 "
             "5m history from Yahoo. Missing data is never treated as zero returns."}
