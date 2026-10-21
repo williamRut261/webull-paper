@@ -49,10 +49,16 @@ https://www.quantconnect.com/forum/discussion/9597/the-in-amp-out-strategy-conti
 Published example:
 https://www.quantconnect.com/terminal/cache/embedded_backtest_7aa1cbe2156acaafffa07ef68cfb67b1.html
 
-The RSI trend and EMA+VWAP adapters are NOT yet implemented: never substitute
-example JSON holdings for actual computed trading signals. The existing ORB
-scanner and Beethoven evaluator likewise require future safe read-only
-adapters with real timestamped market data. Example signals are **synthetic**.
+An **unleveraged** RSI adapter is now implemented in `adapters.py`. It runs
+EMA200, the author's EWM weekly RSI(7) with the one-week shift, 5-session
+cooldown and bearish QQQ/GLD buffer. Bull allocation is **100% QQQ**, NOT
+the author's published 200%-exposure version. Exact published return parity
+is expressly NOT claimed. `adapters.py` also invokes the actual local
+Beethoven JSON/evaluator against externally supplied dated closes. `orb.py`
+filters original scanner output and timestamped independent quotes into
+virtual 25%-sleeve trade ideas with the existing estimated stop-risk logic.
+No adapter pulls account balances, submits broker orders, or establishes any
+paper trade fill. EMA+VWAP remains disabled. Example signals are **synthetic**.
 
 ## Run synthetic portfolio test
 
@@ -122,3 +128,53 @@ or intraday ORB yet, so a real four-way leaderboard cannot truthfully be
 published until genuine comparable observations are connected. The workflow
 runs **offline unit tests only**, not synthetic financial reports and
 does not schedule real trades.
+
+## New four-strategy combined signal plan (OFFLINE; NO BROKER)
+
+`four_signals.py` builds one 25/25/25/25 virtual book from four sources:
+Beethoven (existing 501-node evaluator), the existing *simplified* In & Out
+proxy (with correctly persisted/replayed regime state), the *unleveraged*
+RSI adapter, and genuine intraday ORB scanner hits with independent quote
+observations. This is **not the existing scheduled Webull PAPER bot** and
+will not run without explicit input files. It makes no network requests and
+contains no broker order calls.
+
+For an observation at 10:22 ET on Oct 21, after the Oct 20 completed close:
+
+```sh
+python -m research.portfolio_lab.four_signals \\
+  --daily-csv path/to/full_wide_daily_adjusted_closes.csv \\
+  --orb-report path/to/actual_2026-10-21_ORB_scanner_output.json \\
+  --orb-quotes path/to/independently_timestamped_quotes.json \\
+  --observed-at '2026-10-21T10:22:00-04:00' \\
+  --out path/to/dry-run-plan.json \\
+  --next-state-out path/to/next-signal-state.json
+```
+
+The daily CSV needs a `date` column and complete histories of the original
+Beethoven signal symbols plus In & Out proxies, QQQ and GLD (252+ daily rows,
+more if Composer indicators need them). `--orb-report` accepts the unmodified
+original OG scanner JSON generated during the same ORB session. Quotes are a
+JSON mapping `{ "XLE": { "price": 50.15, "trade_at": "2026-10-21T10:22:00-04:00" } }`
+for each selected breakout. Quote timestamps must be within 120 seconds.
+The exact latest completed daily bar is evaluated once; never enter future
+prices. Pass `--prior-state` on following runs using the previous output,
+otherwise the full state is bootstrapped across historical dates. Output
+contains SHA-256 of files **only to identify the input version**; this does
+NOT independently verify source authenticity or actual filled orders.
+
+The three daily strategies deliberately use **last completed closes** while
+ORB uses the **current morning**. No 15:48 current-day Beethoven target or
+noon rebalancing is asserted. In particular a research plan is NOT an
+executable Webull order set and cannot be safely handed to
+`webull_paper.automatic` without a consolidated broker executor and
+exclusive account ownership. The older scheduled 80/19 Webull PAPER runner
+remains unchanged, and the new adapters must never be mistaken for four
+funded/scheduled paper executions.
+
+**Still outstanding:** actual validated shared market-data ingestion, one
+exclusive sandbox execution manager, position/fill reconciliation and
+sleeve attribution (including ORB day-trade P&L), same-period four-way
+backtesting, independent daily return observations, and a verified risk
+review prior to activating the change. Never use this signal plan as proof
+of strategy profitability.
