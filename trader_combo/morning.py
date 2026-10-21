@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +32,28 @@ from webull_paper.automatic import (
 )
 
 STATE_DIR = Path("state/trader-paper")
+# Stage before the intended entry and tolerate delayed GitHub cron dispatches.
+# Neither staging nor waiting may send an order; morning_guard checks every write.
+SCANNER_STAGE_MINUTE = 9 * 60 + 35
+SCANNER_ENTRY_MINUTE = 10 * 60 + 25
+SCANNER_STOP_MINUTE = 10 * 60 + 40
+
+
+def morning_wait_seconds(now):
+    """Return pre-entry wait on full trading days; reject missed/early starts.
+
+    GitHub scheduled runs may begin tens of minutes late. Fail visibly if the
+    entry window has already passed rather than chasing an old ORB setup.
+    """
+    if now.tzinfo is None:
+        raise RuntimeError("Scanner staging time needs timezone")
+    local = now.astimezone(NY)
+    minutes = local.hour * 60 + local.minute
+    if (not regular_session(local) or
+            not SCANNER_STAGE_MINUTE <= minutes < SCANNER_STOP_MINUTE):
+        raise RuntimeError("TRADER_MISSED_WINDOW: outside 09:35-10:40 ET paper staging/entry window; zero orders")
+    signal_time = local.replace(hour=10, minute=25, second=0, microsecond=0)
+    return max(0.0, (signal_time - local).total_seconds())
 
 
 def morning_guard(now):
@@ -134,6 +157,10 @@ def claim_day(day):
 
 def main():
     assert_sandbox()
+    seconds = morning_wait_seconds(datetime.now(NY))
+    if seconds > 0:
+        print("PAPER_TRADER_WAIT_FOR_SIGNAL seconds=" + str(int(seconds)), flush=True)
+        time.sleep(seconds)
     morning_guard(datetime.now(NY))
     now = datetime.now(NY)
     day = now.date().isoformat()
