@@ -57,6 +57,13 @@ jobs:
         with:
           path: state/webull-paper
           key: webull-public-paper-v1-${{ steps.date.outputs.day }}
+      - name: Summarize paper signals and risks (ADVISORY ONLY - NO ORDERS)
+        if: always()
+        run: |
+          python -m research.beethoven_advisory \
+            --log logs/webull-paper.log \
+            --output logs/beethoven-research.json \
+            || echo "Research report unavailable; original sandbox trading unaffected"
       - name: Preserve paper order audit log
         if: always()
         uses: actions/upload-artifact@v4
