@@ -61,4 +61,23 @@ class ResearchTests(unittest.TestCase):
         got = stats(frame, "equity")
         self.assertEqual(got["max_drawdown_pct"], -10.0)
 
+    def test_original_scanner_allows_at_most_twenty_pct_missing(self):
+        from backtests.compare import morning
+        day="2026-10-19"
+        times = pd.date_range("2000-01-01 09:30", periods=10, freq="5min").strftime("%H:%M")
+        q = pd.DataFrame({"open":[10.0]*10, "high":[11.0]*10,
+                          "low":[9.0]*10, "close":[10.0]*10,
+                          "volume":[20000.0]*10}, index=times)
+        syms=sorted(CANDIDATES)
+        allowed_missing=len(syms)//5
+        bars={(day,s):q for s in syms[allowed_missing:]}
+        pnl,orders,detail=morning(day,bars,10000)
+        self.assertEqual(pnl,0.)
+        self.assertEqual(len(orders),0)
+        self.assertEqual(detail["coverage"],len(syms)-allowed_missing)
+        self.assertEqual(len(detail["missing_symbols"]),allowed_missing)
+        bars.pop((day,syms[allowed_missing]))
+        pnl,orders,detail=morning(day,bars,10000)
+        self.assertIsNone(pnl)
+
 if __name__=="__main__":unittest.main()
