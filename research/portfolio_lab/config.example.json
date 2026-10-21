@@ -1,0 +1,11 @@
+{
+  "cash_reserve": 0.01,
+  "max_symbol_weight": 0.99,
+  "budgets": {
+    "beethoven": 0.6,
+    "inout": 0.2,
+    "rsi_trend": 0.1,
+    "claude_orb": 0.09,
+    "ema_vwap": 0
+  }
+}

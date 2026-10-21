@@ -1,0 +1,19 @@
+{
+  "as_of": "2026-10-20",
+  "targets": {
+    "beethoven": {
+      "QQQ": 0.6,
+      "TLT": 0.4
+    },
+    "inout": {
+      "QQQ": 1
+    },
+    "rsi_trend": {
+      "GLD": 1
+    },
+    "claude_orb": {
+      "XLE": 1
+    },
+    "ema_vwap": {}
+  }
+}
