@@ -13,8 +13,8 @@ Beethoven, Peter Guenther's QuantConnect-style "In & Out", public RSI trend,
 and Claude's ORB scanner are combined and netted into one portfolio target.
 The EMA9+VWAP slot is disabled until its exact entry/exit rules are obtained.
 
-The example allocates 60% Beethoven, 20% In & Out, 10% RSI, 9% ORB, and 1%
-cash, as a **demonstration only**, not an optimized or recommended allocation.
+The example allocates 25% each to Beethoven, In & Out, RSI, and Claude ORB,
+with no research-only cash reserve, as a **demonstration only**.
 Change the budgets only after matched multi-year tests. Every funded strategy
 needs an explicit signal; otherwise **fail closed**. An empty explicit signal
 means that sleeve holds cash. Gross exposure and per-symbol concentration are
@@ -76,3 +76,49 @@ blend and cash controls on identical histories with walk-forward holdouts,
 transaction costs, leverage normalization, overlap/correlation/drawdowns and
 disclosures for look-ahead and post-inception assets. The backtester
 still needs implementing. This PR does NOT report real performance.
+
+
+## Equal 25% research capital and daily leaderboard
+
+As requested, **Beethoven, In & Out, RSI trend, and Claude ORB each get
+25%** of a *virtual research* account (e.g. $2,500 each of $10,000).
+The equal-allocation example uses 0% cash reserve strictly to demonstrate
+a 100% research portfolio. It is **not a live trading recommendation**:
+a future broker implementation needs explicit reserve/margin/settlement checks.
+EMA9+VWAP stays disabled.
+
+The new `daily.py` records one complete exchange session of **four
+independently sourced NET returns** in a persistent JSON ledger, and produces
+a Markdown leaderboard with daily %, daily virtual $ P&L, independent
+cumulative %, virtual equity, a rank, an evidence reference for each,
+and the 25%-daily-rebalanced combined portfolio's cumulative return.
+This **does not generate signals or market returns**. It refuses missing
+sleeves, invalid sources, look-ahead signals, duplicate dates, and
+mixed live/paper/backtest results rather than inventing performance.
+A net-return input of 0 must be a REAL observed zero, not a placeholder.
+
+Input format is illustrated by
+`research/portfolio_lab/observation.EXAMPLE_NOT_REAL.json`.
+That example deliberately contains invented numbers and is never run by
+any scheduled job or included in a real performance report.
+
+Run after authentic same-mode strategy return observations exist:
+
+    python -m research.portfolio_lab.daily \
+      --observation REAL_2026-10-21.json \
+      --ledger path/to/private/daily-ledger.json \
+      --report path/to/private/report-2026-10-21.md
+
+**Accounting note:** Each independent strategy compounds its own original
+25%-funded virtual subaccount. To maintain equal *portfolio weights each day*,
+the separate combined-portfolio NAV is rebalanced to 25% of current aggregate
+equity in each sleeve after every session. Thus adding four independent
+sleeve equities is NOT the same as the daily-rebalanced combined NAV
+after the first day. This distinction is intentional. No broker positions
+are liquidated by this read-only research system.
+
+No automatic live/paper imports exist for RSI, the combined signal engine,
+or intraday ORB yet, so a real four-way leaderboard cannot truthfully be
+published until genuine comparable observations are connected. The workflow
+runs **offline unit tests only**, not synthetic financial reports and
+does not schedule real trades.
