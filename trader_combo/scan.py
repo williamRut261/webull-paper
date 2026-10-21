@@ -39,8 +39,11 @@ def select_recent_signals(report, now, positions=MAX_POSITIONS):
         if hit.get("close_date") is not None and hit["close_date"] != now.date().isoformat():
             raise RuntimeError("Stale scanner daily bar")
         try:
-            hr, minute = map(int, hit["at"].split(":")[:2])
-            found = now.replace(hour=hr, minute=minute, second=0, microsecond=0)
+            from datetime import datetime as dt
+            label = hit["at"]
+            parsed = dt.strptime(label, "%I:%M %p") if "M" in label else dt.strptime(label, "%H:%M")
+            found = now.replace(hour=parsed.hour, minute=parsed.minute,
+                                second=0, microsecond=0)
             age = (now - found).total_seconds()
             pct = float(hit["pct_over"])
             low = float(hit["or_low"])
