@@ -174,6 +174,48 @@ class CombinedPaperTests(TestCase):
                         "2026-10-20", expected_exposure=.80,
                         allowed_extra=CANDIDATES)
 
+    def test_eod_wont_sell_manual_scanner_eligible_holdings(self):
+        from trader_combo.provenance import verify_scanner_position_ownership
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        def ok(orders):
+            return SimpleNamespace(status_code=200, json=lambda: {"data": orders})
+        api = Mock()
+        api.get_order_history.return_value = ok([
+            {"client_order_id": "someone-manually-bought-XLE",
+             "symbol": "XLE", "order_status": "FILLED"}])
+        with self.assertRaisesRegex(RuntimeError, "provenance"):
+            verify_scanner_position_ownership(api, "sandbox", {"XLE"})
+        api.get_order_history.return_value = ok([
+            {"client_order_id": "tr20261020B01XLE", "symbol": "XLE",
+             "order_status": "FILLED"}])
+        self.assertTrue(verify_scanner_position_ownership(api, "sandbox", {"XLE"}))
+        api.get_order_history.return_value = ok([
+            {"client_order_id": "tr20261020B01XLE", "symbol": "XLE",
+             "order_status": "REJECTED"}])
+        with self.assertRaisesRegex(RuntimeError, "provenance"):
+            verify_scanner_position_ownership(api, "sandbox", {"XLE"})
+
+    def test_eod_scanner_dust_is_not_a_successful_flatten(self):
+        from webull_paper.automatic import make_orders
+        from webull_paper.paper_orders import SnapshotPrices
+        from webull_paper import automatic
+        current = datetime(2026, 10, 20, 15, 49, tzinfo=NY)
+        q = SnapshotPrices()
+        q.update({"GDXD": 50., "XLE": 2.})
+        q.trade_times.update({"GDXD": current, "XLE": current})
+        q.required.update({"GDXD", "XLE"})
+        held = {"GDXD": {"qty":80, "price":50, "value":4000},
+                "XLE": {"qty":2, "price":2, "value":4}}
+        with patch.object(automatic, "checked_portfolio",
+                          return_value=(5000., 996., held)), \
+             patch.object(automatic, "datetime") as clock:
+            clock.now.return_value = current
+            with self.assertRaisesRegex(RuntimeError, "Unliquidatable scanner"):
+                make_orders(None, "sandbox", {"GDXD": 0.80}, q,
+                            "2026-10-20", expected_exposure=0.80,
+                            allowed_extra=CANDIDATES)
+
     def test_workflows_are_sandbox_only_not_manual_execution(self):
         from pathlib import Path
         base = Path(__file__).resolve().parents[1] / ".github/workflows"
