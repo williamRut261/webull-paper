@@ -131,6 +131,49 @@ class CombinedPaperTests(TestCase):
         self.assertEqual(report["beethoven_allocation"], 0.80)
         self.assertEqual(report["trader_allocation"], 0.19)
 
+    def test_eod_closes_scanner_but_preserves_eighty_pct_beethoven(self):
+        from webull_paper.automatic import make_orders
+        from webull_paper.paper_orders import SnapshotPrices
+        from unittest.mock import Mock
+        from webull_paper import automatic
+        asof = datetime(2026, 10, 20, 15, 49, tzinfo=NY)
+        prices = SnapshotPrices()
+        prices.update({"GDXD": 50., "XLE": 50.})
+        prices.trade_times.update({"GDXD": asof, "XLE": asof})
+        prices.required.update({"GDXD", "XLE"})
+        initial = {
+            "GDXD": {"qty": 80., "value": 4000., "price": 50.},
+            "XLE": {"qty": 18., "value": 900., "price": 50.}
+        }
+        remaining = {"GDXD": initial["GDXD"]}
+        rounds = [(5000., 100., initial), (5000., 1000., remaining)]
+        logs = []
+        trade = Mock()
+        def portfolio_side_effect(*args, **kwargs):
+            return rounds[0] if not logs else rounds[1]
+        with patch.object(automatic, "checked_portfolio",
+                          side_effect=portfolio_side_effect), \
+             patch.object(automatic, "preview_and_place",
+                          side_effect=lambda t, account, payload, **kw: logs.append(payload)), \
+             patch.object(automatic, "datetime") as clock:
+            clock.now.return_value = asof
+            count = make_orders(trade, "fake-paper-account", {"GDXD": 0.80},
+                                prices, "2026-10-20", expected_exposure=0.80,
+                                allowed_extra=CANDIDATES)
+        self.assertEqual(count, 1)
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["symbol"], "XLE")
+        self.assertEqual(logs[0]["side"], "SELL")
+        self.assertEqual(logs[0]["quantity"], "18")
+
+    def test_eod_never_accepts_trader_ticker_as_beethoven_target(self):
+        from webull_paper.automatic import make_orders
+        from webull_paper.paper_orders import SnapshotPrices
+        with self.assertRaisesRegex(RuntimeError, "Beethoven target"):
+            make_orders(None, "fake", {"XLE": .80}, SnapshotPrices(),
+                        "2026-10-20", expected_exposure=.80,
+                        allowed_extra=CANDIDATES)
+
     def test_workflows_are_sandbox_only_not_manual_execution(self):
         from pathlib import Path
         base = Path(__file__).resolve().parents[1] / ".github/workflows"
