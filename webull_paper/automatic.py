@@ -190,6 +190,31 @@ def checked_portfolio(trade, account_id, allowed_extra=frozenset()):
     return equity, cash, positions
 
 
+def reconcile_order_fill(trade, account_id, symbol, side, before_qty, ordered_qty,
+                         allowed_extra=frozenset()):
+    """Verify reported FILLED orders against the sandbox position share count.
+
+    Quote movement cannot prove fills. Confirm exact share deltas before placing
+    another order; if position state lags, poll without retrying the order.
+    """
+    for attempt in range(6):
+        equity, cash, positions = checked_portfolio(trade, account_id, allowed_extra)
+        after_qty = positions.get(symbol, {}).get("qty", 0.0)
+        delta = before_qty - after_qty if side == "SELL" else after_qty - before_qty
+        tolerance = max(1e-5, ordered_qty * 1e-6)
+        if abs(delta - ordered_qty) <= tolerance:
+            print("PAPER_POSITION_RECONCILED " + json.dumps({
+                "symbol": symbol, "side": side, "before_qty": before_qty,
+                "filled_qty": ordered_qty, "after_qty": after_qty,
+            }, sort_keys=True), flush=True)
+            return equity, cash, positions
+        if attempt < 5:
+            time.sleep(2)
+    raise RuntimeError(
+        "Webull reports FILLED but position quantity did not reconcile for "
+        + symbol + "; abort further sandbox orders (do not retry)")
+
+
 def make_orders(trade, account_id, targets, quotes, day, expected_exposure=MAX_EXPOSURE,
                 allowed_extra=frozenset()):
     """Recalculate balances after EVERY completed sale and buy."""
@@ -214,24 +239,57 @@ def make_orders(trade, account_id, targets, quotes, day, expected_exposure=MAX_E
     if any(sym in allowed_extra and pos["value"] < MIN_ORDER_USD
            for sym, pos in holdings.items()):
         raise RuntimeError("Unliquidatable scanner position below $5; do not claim a clean exit")
-    for symbol, position in sorted(holdings.items()):
-        excess = position["value"] - equity * targets.get(symbol, 0)
-        tolerance = MIN_ORDER_USD if symbol in allowed_extra else max(
-            MIN_ORDER_USD, equity * 0.01)
-        if excess < tolerance:
-            continue
-        close_window(datetime.now(NY))
-        if symbol not in quotes or quotes[symbol] <= 0:
-            raise RuntimeError("Cannot safely value paper sale: " + symbol)
-        # Amount capped at verified owned position.
-        count += 1
-        payload = order_payload(symbol, "SELL",
-                                min(excess, position["value"]), quotes[symbol],
-                                day, count, allowed_extra=allowed_extra)
-        if float(payload["quantity"]) > position["qty"] + 1e-6:
-            raise RuntimeError("Attempted paper sale exceeds owned shares")
-        preview_and_place(trade, account_id, payload, before_submit=revalidate)
-        equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
+    for symbol in sorted(holdings):
+        # A share-quantity market sale may leave a fractional remainder.
+        # Do not apply the 1%-of-equity drift tolerance to assets we no
+        # longer target (e.g. yesterday's SOXS). Recheck after each fill.
+        for _ in range(3):
+            position = holdings.get(symbol)
+            if not position:
+                break
+            excess = position["value"] - equity * targets.get(symbol, 0)
+            tolerance = (max(MIN_ORDER_USD, equity * 0.01)
+                         if symbol in targets else MIN_ORDER_USD)
+            if excess < tolerance:
+                break
+            close_window(datetime.now(NY))
+            if symbol not in quotes or quotes[symbol] <= 0:
+                raise RuntimeError("Cannot safely value paper sale: " + symbol)
+            count += 1
+            payload = order_payload(
+                symbol, "SELL", min(excess, position["value"]), quotes[symbol],
+                day, count, allowed_extra=allowed_extra)
+            requested = float(payload["quantity"])
+            if requested > position["qty"] + 1e-6:
+                raise RuntimeError("Attempted paper sale exceeds owned shares")
+            preview_and_place(trade, account_id, payload, before_submit=revalidate)
+            equity, cash, holdings = reconcile_order_fill(
+                trade, account_id, symbol, "SELL", position["qty"],
+                requested, allowed_extra)
+        else:
+            # The final sale may leave only untradeable sub-$5 dust. Do not
+            # label that as repeated-liquidation failure; report it below.
+            remaining = holdings.get(symbol)
+            if remaining:
+                residual_excess = (remaining["value"] -
+                                   equity * targets.get(symbol, 0))
+                residual_limit = (max(MIN_ORDER_USD, equity * .01)
+                                  if symbol in targets else MIN_ORDER_USD)
+                if residual_excess >= residual_limit:
+                    raise RuntimeError(
+                        "Too many paper liquidation attempts for " + symbol)
+    # No non-target position >= $5 may be silently carried overnight.
+    # Sub-minimum Beethoven dust is reported explicitly; unclosed scanner
+    # positions are fatal because ORB is an intraday-only sleeve.
+    leftover = {sym: {"qty": round(p["qty"], 6), "value": round(p["value"], 2)}
+                for sym, p in holdings.items() if sym not in targets and p["qty"] > 0}
+    if leftover:
+        print("PAPER_NON_TARGET_RESIDUALS " +
+              json.dumps(leftover, sort_keys=True), flush=True)
+        if any(sym in allowed_extra for sym in leftover):
+            raise RuntimeError("Scanner position not fully closed; do not claim clean exit")
+        if any(p["value"] >= MIN_ORDER_USD for p in leftover.values()):
+            raise RuntimeError("Non-target Beethoven position still liquidatable; abort buys")
     # Sell-before-buy: never proceed if a sale has not fully filled.
     for symbol, weight in sorted(targets.items()):
         equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
@@ -252,8 +310,11 @@ def make_orders(trade, account_id, targets, quotes, day, expected_exposure=MAX_E
         reserved = float(payload["quantity"]) * quotes[symbol] * (1 + BUY_PRICE_BUFFER)
         if reserved > cash + 1e-6 or reserved + exposure > equity * MAX_EXPOSURE + 1e-6:
             raise RuntimeError("Paper order price/exposure guard failed")
+        before_qty = holdings.get(symbol, {}).get("qty", 0.0)
         preview_and_place(trade, account_id, payload, before_submit=revalidate)
-        equity, cash, holdings = checked_portfolio(trade, account_id, allowed_extra)
+        equity, cash, holdings = reconcile_order_fill(
+            trade, account_id, symbol, "BUY", before_qty,
+            float(payload["quantity"]), allowed_extra)
     print("PAPER_REBALANCE_COMPLETE " + json.dumps({
         "order_count": count,
         "equity": round(equity, 2),

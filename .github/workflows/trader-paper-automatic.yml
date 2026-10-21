@@ -2,9 +2,10 @@ name: Trader ORB + Beethoven PAPER (SANDBOX ONLY)
 on:
   workflow_dispatch:
   schedule:
-    # Buy research-approved breakouts only after the 10:15 ET ORB signal.
-    # Best effort, skips late runs; NO real money.
-    - cron: "20 10 * * 1-5"
+    # Stage at 09:35 ET, before the 10:25 ET entry. GitHub cron often runs
+    # late; the runner waits until entry and hard-stops at 10:40 ET.
+    # Trading remains SANDBOX only. Late dispatches never chase old signals.
+    - cron: "35 9 * * 1-5"
       timezone: "America/New_York"
 permissions:
   contents: read
@@ -15,7 +16,7 @@ jobs:
   trader-paper-morning:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 95
     env:
       PYTHONPATH: .
       WEBULL_PAPER_APP_KEY: ${{ secrets.WEBULL_PAPER_APP_KEY }}

@@ -277,6 +277,7 @@ class PaperAutomationSafetyTests(unittest.TestCase):
         quotes.trade_times["GDXD"] = self.now
         with patch.object(bot, "checked_portfolio", return_value=snapshot), \
              patch.object(bot, "preview_and_place") as submit, \
+             patch.object(bot, "reconcile_order_fill", return_value=snapshot), \
              patch.object(bot, "datetime") as clock:
             clock.now.return_value = self.now
             count = bot.make_orders(trade, "sandbox", {"GDXD": .99},

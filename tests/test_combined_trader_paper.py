@@ -12,7 +12,7 @@ from trader_combo.universe import (
 )
 from trader_combo.scan import select_recent_signals
 from trader_combo.morning import (
-    morning_guard, assert_sandbox, proposed_entries, scanner_history_guard
+    morning_guard, morning_wait_seconds, assert_sandbox, proposed_entries, scanner_history_guard
 )
 from webull_paper.paper_orders import order_payload, portfolio
 from research.beethoven_advisory import build_report
@@ -66,6 +66,23 @@ class CombinedPaperTests(TestCase):
                     morning_guard(self.now.replace(hour=hour, minute=minute))
         with self.assertRaises(RuntimeError):
             morning_guard(self.now + timedelta(days=4))  # Saturday
+
+    def test_github_delayed_start_stages_orb_without_late_orders(self):
+        # 09:35 staging tolerates a 30+ minute late GitHub cron start.
+        self.assertEqual(
+            morning_wait_seconds(self.now.replace(hour=9, minute=35)), 50 * 60)
+        self.assertEqual(
+            morning_wait_seconds(self.now.replace(hour=10, minute=10)), 15 * 60)
+        self.assertEqual(
+            morning_wait_seconds(self.now.replace(hour=10, minute=25)), 0)
+        self.assertEqual(
+            morning_wait_seconds(self.now.replace(hour=10, minute=39)), 0)
+        for hour, minute in ((9, 34), (10, 40), (10, 54)):
+            with self.subTest(hour=hour, minute=minute), self.assertRaisesRegex(
+                    RuntimeError, "TRADER_MISSED_WINDOW"):
+                morning_wait_seconds(self.now.replace(hour=hour, minute=minute))
+        with self.assertRaisesRegex(RuntimeError, "TRADER_MISSED_WINDOW"):
+            morning_wait_seconds(self.now + timedelta(days=4))
 
     def test_sandbox_gate_never_allows_other_account_or_unenabled(self):
         good = {"WEBULL_PAPER_EXECUTE_ENABLED": "true",
@@ -227,6 +244,9 @@ class CombinedPaperTests(TestCase):
         self.assertIn("WEBULL_TRADER_PAPER_ENABLED:", close_workflow)
         self.assertIn("group: webull-paper-order", open_workflow)
         self.assertIn("group: webull-paper-order", close_workflow)
+        self.assertIn('cron: "35 9 * * 1-5"', open_workflow)
+        self.assertIn("timeout-minutes: 95", open_workflow)
+        self.assertNotIn('cron: "20 10 * * 1-5"', open_workflow)
 
 
 if __name__ == "__main__":
