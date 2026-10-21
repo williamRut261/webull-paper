@@ -10,7 +10,7 @@ from pathlib import Path
 
 from strategy_engine import ORIGINAL_EXECUTION_ASSETS
 
-MARKERS = ("PAPER_AUTO_SIGNAL", "PAPER_REBALANCE_COMPLETE",
+MARKERS = ("PAPER_AUTO_SIGNAL", "PAPER_COMBINED_ALLOCATION", "PAPER_REBALANCE_COMPLETE",
            "PAPER_TWO_SAMPLE_AGREEMENT")
 KNOWN_LEVERAGED = frozenset(
     "GDXU GDXD TQQQ SQQQ UVXY SPXL SPXU UPRO TECL TECS "
@@ -33,7 +33,9 @@ def parse_events(log):
     return events
 
 
-def safe_targets(value):
+def safe_targets(value, expected_total=0.99):
+    if expected_total not in (0.99, 0.80):
+        raise ValueError("Unexpected Beethoven sleeve weight")
     if not isinstance(value, dict) or not value:
         raise ValueError("Missing or invalid target weights")
     if set(value) - ORIGINAL_EXECUTION_ASSETS:
@@ -42,10 +44,10 @@ def safe_targets(value):
     for ticker, weight in value.items():
         if isinstance(weight, bool) or not isinstance(weight, (float, int)):
             raise ValueError("Invalid target weight")
-        if not math.isfinite(weight) or weight <= 0 or weight > 0.99:
+        if not math.isfinite(weight) or weight <= 0 or weight > expected_total:
             raise ValueError("Nonfinite or out-of-range target")
         weights[ticker] = float(weight)
-    if not math.isclose(sum(weights.values()), 0.99, rel_tol=0, abs_tol=1e-6):
+    if not math.isclose(sum(weights.values()), expected_total, rel_tol=0, abs_tol=1e-6):
         raise ValueError("Targets do not total 99%")
     return dict(sorted(weights.items()))
 
@@ -72,7 +74,15 @@ def build_report(log):
         signal = signals[0]
         if signal.get("paper_only") is not True:
             raise ValueError("Signal did not assert paper-only trading")
-        targets = safe_targets(signal.get("targets"))
+        combined = events["PAPER_COMBINED_ALLOCATION"]
+        if len(combined) > 1:
+            raise ValueError("Repeated combined allocation markers")
+        combined_mode = bool(combined)
+        if combined_mode and (combined[0].get("beethoven_weight") != 0.80 or
+                              combined[0].get("scanner_weight") != 0.19):
+            raise ValueError("Unexpected combined sleeve exposure")
+        targets = safe_targets(signal.get("targets"),
+                               expected_total=0.80 if combined_mode else 0.99)
         complete = events["PAPER_REBALANCE_COMPLETE"]
         if len(complete) > 1:
             raise ValueError("Multiple completion events")
@@ -94,7 +104,10 @@ def build_report(log):
                          "or not finished. Do not infer a fill.")
         return {**basic, "status": "PAPER_LOG_REBALANCE_COMPLETE" if completion
                 else "PAPER_LOG_SIGNAL_ONLY", "date": signal.get("date"),
-                "targets": targets, "max_symbol_weight": maximum,
+                "targets": targets,
+                "beethoven_allocation": 0.80 if combined_mode else 0.99,
+                "trader_allocation": 0.19 if combined_mode else 0.0,
+                "max_symbol_weight": maximum,
                 "known_high_risk_tickers": risky, "review_notes": notes,
                 "completion_logged": completion is not None,
                 "order_count_reported_by_runner": count,
