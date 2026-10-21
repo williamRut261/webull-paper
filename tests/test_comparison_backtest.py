@@ -32,4 +32,33 @@ class ResearchTests(unittest.TestCase):
             pnl,trades,info=morning("2026-10-19",got,10000)
             self.assertIsNone(pnl)
             self.assertEqual(info["coverage"],1)
+
+    def test_contiguous_windows_are_not_stitched(self):
+        from unittest.mock import patch
+        from backtests.compare import run
+        class FakeEvaluator:
+            def __init__(self, root, data):
+                self.data = data
+            def evaluate(self):
+                if self.data.index[-1] == pd.Timestamp("2024-01-03"):
+                    raise ValueError("selected ETF not yet listed")
+                return {"ZZZ": 1.0}
+        dates = pd.bdate_range("2024-01-02", periods=9)
+        frame = pd.DataFrame({"ZZZ": [100+i for i in range(len(dates))]}, index=dates)
+        with patch("backtests.compare.load_strategy", return_value=None), patch(
+                "backtests.compare.Evaluator", FakeEvaluator):
+            long, match, trades, coverage = run(frame, {}, "2024-01-01", "2024-01-31", 0)
+        self.assertEqual(coverage["daily_skipped_sessions"], 1)
+        self.assertEqual(len(coverage["valid_daily_windows"]), 2)
+        self.assertEqual(long.date.iloc[0], "2024-01-05")
+        self.assertEqual(long.date.iloc[-1], "2024-01-12")
+        self.assertTrue(match.empty)
+
+    def test_drawdown_includes_first_session_loss(self):
+        from backtests.compare import stats
+        frame = pd.DataFrame({"date": ["2024-01-02", "2024-01-03"],
+                              "equity": [9000.0, 9500.0]})
+        got = stats(frame, "equity")
+        self.assertEqual(got["max_drawdown_pct"], -10.0)
+
 if __name__=="__main__":unittest.main()
