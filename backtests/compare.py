@@ -89,77 +89,158 @@ def morning(day, bars, equity, cost_bps=10):
                        "exit_price_proxy":sell,"net_pnl":round(gain,4)})
     return pnl/equity,trades,coverage_info
 
-def run(daily,bars,start,end,cost_bps=10):
-    if daily.empty or daily.index.has_duplicates:
-        raise ValueError("Invalid daily data")
-    daily=daily.sort_index().apply(pd.to_numeric,errors="coerce")
-    root=load_strategy()
-    accounts={"beethoven_99":10000.,"beethoven_80_cash_19":10000.,
-              "beethoven_75_cash_25":10000.}
-    matched={"beethoven_99":10000.,"webull_80_19":10000.}
-    curves=[];paired=[];trades=[];errors=[]
-    began=False
-    for i in range(1,len(daily)):
-        day=daily.index[i].strftime("%Y-%m-%d")
-        if day<start or day>end:
+def choose_segment(segments):
+    """Longest uninterrupted valid sample, not an invented stitched return."""
+    if not segments:
+        return pd.DataFrame(), []
+    best = max(segments, key=lambda xs: (len(xs), xs[-1]["date"]))
+    return pd.DataFrame(best), [
+        {"start": xs[0]["date"], "end": xs[-1]["date"], "days": len(xs)}
+        for xs in segments
+    ]
+
+
+def run(daily, bars, start, end, cost_bps=10):
+    """Research-only, true-signal-data-required, contiguous market sessions.
+
+    Evaluate ALL requested dates, even if an early asset did not yet exist.
+    Report contiguous valid windows, never pretend the sparse results cover
+    years that lack historical data. Trade costs use actual target turnover,
+    with cash implicit, rather than charging the whole allocation each day.
+    """
+    if daily.empty or daily.index.has_duplicates or not daily.index.is_monotonic_increasing:
+        raise ValueError("Invalid or unsorted daily price index")
+    if not 0 <= cost_bps <= 100:
+        raise ValueError("Invalid assumed per-dollar trade cost")
+    daily = daily.apply(pd.to_numeric, errors="coerce")
+    root = load_strategy()
+    exposures = {"beethoven_99": .99, "beethoven_80_cash_19": .80,
+                 "beethoven_75_cash_25": .75}
+    windows, paired_windows, trades = [], [], []
+    long_rows, pair_rows = [], []
+    issues, skipped = [], 0
+    equity = {name: 10000. for name in exposures}
+    prev_alloc = {name: {} for name in exposures}
+    matched = {"beethoven_99": 10000., "webull_80_19": 10000.}
+    matched_prior = {"beethoven_99": {}, "webull_80_19": {}}
+
+    def close_long():
+        nonlocal long_rows, equity, prev_alloc
+        if long_rows:
+            windows.append(long_rows)
+        long_rows = []
+        equity = {name: 10000. for name in exposures}
+        prev_alloc = {name: {} for name in exposures}
+
+    def close_paired():
+        nonlocal pair_rows, matched, matched_prior
+        if pair_rows:
+            paired_windows.append(pair_rows)
+        pair_rows = []
+        matched = {"beethoven_99": 10000., "webull_80_19": 10000.}
+        matched_prior = {"beethoven_99": {}, "webull_80_19": {}}
+
+    def period_return(weights, price_changes, exposure, holdings):
+        target = {s: w*exposure for s, w in weights.items()}
+        # Notional traded on buys plus sells. This is a simplified model
+        # without price impact, broker rejects or intraday borrow.
+        turnover = sum(abs(target.get(s, 0)-holdings.get(s, 0))
+                       for s in set(target)|set(holdings))
+        gross = sum(target[s]*price_changes[s] for s in target)
+        net = gross - turnover*cost_bps/10000.
+        if 1+net <= 0 or 1+gross <= 0:
+            raise ValueError("Portfolio exhausted")
+        # End-of-period marked weights before next daily rebalance.
+        after = {s: weight*(1+price_changes[s])/(1+gross)
+                 for s, weight in target.items()}
+        return net, after
+
+    for i in range(1, len(daily)):
+        day = daily.index[i].strftime("%Y-%m-%d")
+        if day < start or day > end:
             continue
         try:
-            weights=Evaluator(root,daily.iloc[:i]).evaluate()
-            if not math.isclose(sum(weights.values()),1.,abs_tol=1e-7):
-                raise ValueError("weights do not sum to one")
-            r=0.
-            for symbol,w in weights.items():
-                p0,p1=daily[symbol].iloc[i-1],daily[symbol].iloc[i]
-                if not (np.isfinite(p0) and np.isfinite(p1) and p0>0 and p1>0):
-                    raise ValueError("missing price "+symbol)
-                r+=w*(p1/p0-1)
-        except (KeyError,ValueError,IndexError,TypeError) as exc:
-            errors.append({"date":day,"reason":str(exc)[:180]})
-            if began:
-                # Stop old contiguous sample, then restart after a missing day;
-                # cannot carry a fictitious portfolio across unpriced sessions.
-                accounts={"beethoven_99":10000.,"beethoven_80_cash_19":10000.,
-                          "beethoven_75_cash_25":10000.}
-                matched={"beethoven_99":10000.,"webull_80_19":10000.}
-                curves=[];paired=[];trades=[]
-                began=False
+            weights = Evaluator(root, daily.iloc[:i]).evaluate()
+            if not weights or not math.isclose(sum(weights.values()), 1., abs_tol=1e-7):
+                raise ValueError("Invalid evaluated weights")
+            changes = {}
+            for symbol in weights:
+                p0, p1 = daily[symbol].iloc[i-1], daily[symbol].iloc[i]
+                if not (np.isfinite(p0) and np.isfinite(p1) and p0 > 0 and p1 > 0):
+                    raise ValueError("Missing selected holding price: "+symbol)
+                changes[symbol] = p1/p0-1
+        except (KeyError, ValueError, IndexError, TypeError) as exc:
+            skipped += 1
+            if len(issues) < 20:
+                issues.append({"date": day, "reason": str(exc)[:160]})
+            close_long()
+            close_paired()
             continue
-        began=True
-        # Daily rebalance dollar-proportional approximation. Daily cost on all
-        # invested capital is intentionally conservative but NOT actual turnover.
-        fee=cost_bps/10000.
-        for key,exposure in (("beethoven_99",.99),("beethoven_80_cash_19",.80),
-                             ("beethoven_75_cash_25",.75)):
-            accounts[key]*=1+exposure*(r-fee)
-        curves.append({"date":day,**accounts,"asset_return":r})
-        if bars:
-            if not paired and day not in {d for d,_ in bars}: # before intraday period
-                continue
-            orb,new,info=morning(day,bars,matched["webull_80_19"],cost_bps)
-            if orb is None:
-                errors.append({"date":day,"reason":"intraday incomplete","detail":info})
-                if paired:
-                    matched={"beethoven_99":10000.,"webull_80_19":10000.}
-                    paired=[];trades=[] # retain only continuous matched session suffix
-                continue
-            matched["beethoven_99"]*=1+.99*(r-fee)
-            matched["webull_80_19"]*=1+.8*(r-fee)+orb
-            paired.append({"date":day,**matched,"orb_return_contribution":orb,
-                           "scanner_coverage":info["coverage"],
-                           "scanner_required":info["required"],
-                           "scanner_missing":",".join(info["missing_symbols"])})
-            trades+=new
-    return pd.DataFrame(curves),pd.DataFrame(paired),pd.DataFrame(trades),errors
 
-def stats(frame,column):
-    if frame.empty: return None
-    x=frame[column].astype(float)
-    n=len(x)
-    dd=(x/x.cummax()-1).min()
-    return {"days":n,"total_pct":round((x.iloc[-1]/10000-1)*100,3),
-            "equivalent_daily_pct":round(((x.iloc[-1]/10000)**(1/n)-1)*100,4),
-            "annualized_pct":round(((x.iloc[-1]/10000)**(252/n)-1)*100,3),
-            "max_drawdown_pct":round(dd*100,3)}
+        growth = {}
+        for key, exposure in exposures.items():
+            ret, next_holdings = period_return(weights, changes, exposure, prev_alloc[key])
+            equity[key] *= 1+ret
+            prev_alloc[key] = next_holdings
+            growth[key] = equity[key]
+        long_rows.append({"date": day, **growth,
+                          "original_asset_return": sum(weights[s]*changes[s]
+                                                       for s in weights)})
+
+        if bars:
+            scanner_return, new_trades, detail = morning(day, bars,
+                                                 matched["webull_80_19"], cost_bps)
+            if scanner_return is None:
+                close_paired()
+                if len(issues) < 20:
+                    issues.append({"date": day, "reason": "Incomplete intraday scanner data",
+                                   "coverage": detail.get("coverage"),
+                                   "required": detail.get("required")})
+                continue
+            r99, w99 = period_return(weights, changes, .99,
+                                      matched_prior["beethoven_99"])
+            r80, w80 = period_return(weights, changes, .80,
+                                      matched_prior["webull_80_19"])
+            matched_prior["beethoven_99"] = w99
+            matched_prior["webull_80_19"] = w80
+            matched["beethoven_99"] *= (1+r99)
+            matched["webull_80_19"] *= (1+r80+scanner_return)
+            pair_rows.append({"date": day, **matched,
+                              "orb_return_contribution": scanner_return,
+                              "orb_trades": len(new_trades)})
+            trades.extend(new_trades)
+    close_long()
+    close_paired()
+    long, long_periods = choose_segment(windows)
+    paired, matched_periods = choose_segment(paired_windows)
+    report_coverage = {"requested_start": start, "requested_end": end,
+                       "valid_daily_windows": long_periods,
+                       "valid_matched_windows": matched_periods,
+                       "daily_skipped_sessions": skipped,
+                       "first_issues": issues,
+                       "note": ("Only the longest uninterrupted valid sample is compared; "
+                                "no short window is labeled a three-year backtest. "
+                                "Inactive historical ETFs can make older windows invalid.")}
+    return long, paired, pd.DataFrame(trades), report_coverage
+
+
+def stats(frame, column):
+    if frame.empty:
+        return None
+    x = frame[column].astype(float)
+    first, last = frame.date.iloc[0], frame.date.iloc[-1]
+    n = len(x)
+    if (x <= 0).any():
+        raise ValueError("Invalid equity curve")
+    # Include original $10k equity as the starting peak for drawdown.
+    values = pd.concat([pd.Series([10000.]), x], ignore_index=True)
+    dd = (values/values.cummax()-1).min()
+    return {"start": first, "end": last, "days": n,
+            "total_pct": round((x.iloc[-1]/10000-1)*100, 3),
+            "equivalent_daily_pct": round(((x.iloc[-1]/10000)**(1/n)-1)*100, 4),
+            "annualized_pct": round(((x.iloc[-1]/10000)**(252/n)-1)*100, 3),
+            "max_drawdown_pct": round(dd*100, 3)}
+
 
 def main():
     p=argparse.ArgumentParser()
@@ -172,7 +253,7 @@ def main():
     a=p.parse_args()
     if not 0<=a.cost_bps<=100: raise ValueError("invalid costs")
     daily=pd.read_csv(a.daily,index_col=0,parse_dates=True)
-    long,match,trades,issues=run(daily,read_bars(a.intraday),a.start,a.end,a.cost_bps)
+    long,match,trades,coverage=run(daily,read_bars(a.intraday),a.start,a.end,a.cost_bps)
     dest=Path(a.out);dest.mkdir(parents=True,exist_ok=True)
     long.to_csv(dest/"long_beethoven.csv",index=False)
     match.to_csv(dest/"matched_80_19.csv",index=False)
@@ -182,8 +263,8 @@ def main():
             "long":{k:stats(long,k) for k in
                      ("beethoven_99","beethoven_80_cash_19","beethoven_75_cash_25")},
             "matched":{k:stats(match,k) for k in ("beethoven_99","webull_80_19")},
-            "matched_days":len(match),"orb_trades":len(trades),"issues":issues[:40],
-            "LIMITATION":"Indicative daily-close Beethoven simulation, ORB 5m bar-open fills. "
+            "matched_days":len(match),"orb_trades":len(trades),"coverage":coverage,
+            "LIMITATION":"Indicative daily-close Beethoven simulation with estimated actual turnover; ORB 5m bar-open fills. "
             "Not exact live 15:48 ET or broker execution; no complete 2024-2026 "
             "5m history from Yahoo. Missing data is never treated as zero returns."}
     (dest/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
