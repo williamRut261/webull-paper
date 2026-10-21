@@ -29,3 +29,14 @@ The scheduling gate is maintained in `.github/workflows/webull-auto-execute.yml`
 - `.github/workflows/tests.yml`: mocked offline regression tests, no account access.
 
 Strategy timing, fill sequencing, duplicate-order checks, and 99% maximum intended allocation are preserved from the previous private sandbox bot. Market-data differences from other brokers can produce different allocations.
+
+## Optional independent trading research (Oct. 20, 2026)
+
+The 11 MIT-licensed Day Trader Skill Python modules are vendored under
+`vendor/day_trader_skill/` and connected through an **advisory-only**
+log report. The existing scheduled Webull sandbox orders and all strategy
+indicators remain exactly as before. `Day Trader Research (MANUAL - NO BROKER
+ORDERS)` runs public-data scanner/news/SEC research without broker secrets.
+The existing Webull paper workflow attaches `logs/beethoven-research.json`
+when available. See `research/README.md`. The Time Machine needs a separate
+intraday plan and does NOT predict Beethoven's multi-ETF future returns.

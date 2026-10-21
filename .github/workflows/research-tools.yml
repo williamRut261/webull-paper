@@ -1,0 +1,49 @@
+name: Day Trader Research (MANUAL - NO BROKER ORDERS)
+on:
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: Public-data research tool
+        required: true
+        default: scanner
+        type: choice
+        options:
+          - scanner
+          - news
+          - analyst
+          - pelosi
+      symbol:
+        description: Ticker for research (ignored by Pelosi tracker)
+        required: true
+        default: TQQQ
+        type: string
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      RESEARCH_TOOL: ${{ inputs.tool }}
+      RESEARCH_SYMBOL: ${{ inputs.symbol }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Read public research data only - NEVER broker orders
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          python -m research.read_only_tool --tool "$RESEARCH_TOOL" --symbol "$RESEARCH_SYMBOL" 2>&1 | tee logs/trader-research.log
+      - name: Save public research output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trader-research-${{ github.run_id }}
+          path: |
+            logs/trader-research.log
+            trader/
+          if-no-files-found: warn
+          retention-days: 14
