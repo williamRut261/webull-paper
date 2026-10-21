@@ -1,5 +1,34 @@
 # Webull Paper
 
+## Beethoven + Trader Skill: automated stock/ETF PAPER sleeves
+
+This repository now contains an optional combined automatic Webull **sandbox
+paper-trading** strategy (no real brokerage API endpoints):
+
+- The original Beethoven 501-node signal decision tree is unchanged, but its
+  allocation is scaled proportionally from 99% to **80% of account equity**.
+- The original Day Trader Skill opening-range-breakout scanner searches a
+  separate, explicit stock **and ETF** candidate universe and may automatically
+  **buy** up to **19% of equity** at 10:20-10:40 AM New York time.
+- At about 3:48 PM New York time, the original Beethoven paper runner verifies
+  scanner holdings from filled bot order history and attempts to **sell them**
+  before rebalancing the Beethoven 80% allocation. The combined maximum target
+  is 99% of equity, with 1% intended spare cash.
+- Early-entry and close workflows are best-effort GitHub Actions; delayed
+  schedules, Yahoo data failures, delayed broker quotes, unavailable products,
+  order rejections or cash restrictions can cause skipped orders or overnight
+  positions. The original skill's example stop/target levels are currently
+  **advisory sizing inputs, not protective orders**.
+- Only the scanner's breakout and conservative sizing logic is wired to
+  autonomous sandbox execution. Other Trader Skill modules (Time Machine,
+  News, Analyst, Pelosi, Alerts, etc.) remain independent research tools and
+  are NOT automated trading gates. No profitability has been demonstrated.
+
+See [combined strategy operation](trader_combo/README.md) and the
+[original research toolkit](research/README.md). The change is restricted
+to this Webull PAPER repo; it does not alter Alpaca LIVE or Webull LIVE.
+
+
 Scheduled Webull OpenAPI **sandbox-only** paper-trading bot. This repository is public; its GitHub-hosted standard runner does not consume the private-repository Actions minute allowance.
 
 ## Activation status
