@@ -178,3 +178,26 @@ sleeve attribution (including ORB day-trade P&L), same-period four-way
 backtesting, independent daily return observations, and a verified risk
 review prior to activating the change. Never use this signal plan as proof
 of strategy profitability.
+
+## Webull PAPER four-way cutover safety gate
+
+`webull_paper/four_strategy_cutover.py` provides a strict **PREVIEW ONLY**
+staging policy. All FOUR independent virtual capital sleeves remain 25% each.
+A paper broker execution plan would reserve 1% overall cash by deploying at
+most **24.75% of total account equity** from each sleeve (0.25 × 0.99), so
+gross exposure is at most 99%. It validates every proposed ticker against
+reviewed universes and every proposed holding's price/time against a fresh,
+independently provided Webull snapshot.
+
+Even when all caller-provided cutover conditions are true,
+`deployment_allowed` is deliberately **false** until an exclusive broker
+executor, account/position/order reconciliation, attribution ledger and
+old-schedule replacement are implemented and reviewed. The guard explicitly
+checks whether BOTH the old close and morning schedules were disabled and
+whether the designated pinned sandbox account is flat and has no open orders.
+This function does not independently read broker or GitHub state; booleans are
+only passed-in claims. It must not be mistaken for executed checks.
+
+The existing `main` workflows remain active under the older configuration
+until a separate reviewed deployment takes place. **Never operate an
+unmerged draft order module concurrently with the old 80/19 schedule.**
