@@ -80,7 +80,7 @@ def append(ledger, observation):
             raise DailyLedgerError("A fully funded unlevered sleeve cannot lose over 100%")
         source = row.get("evidence")
         if not isinstance(source, str) or not source.strip() or source.strip().lower() in (
-                "example", "synthetic", "unknown", "tbd", "none"):
+                "example", "synthetic", "unknown", "tbd", "none") or source.strip().upper().startswith("REPLACE_"):
             raise DailyLedgerError("Verifiable evidence identifier needed for " + sleeve)
         as_of = row.get("signal_as_of")
         if iso(as_of) > day:

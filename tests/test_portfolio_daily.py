@@ -37,7 +37,7 @@ class DailyPerformanceTests(unittest.TestCase):
             obs=sample();del obs["strategies"][name]
             with self.assertRaises(DailyLedgerError):
                 append(fresh(),obs)
-        for source in ("", "example", "unknown", None):
+        for source in ("", "example", "unknown", "REPLACE_WITH_VERIFIED_SOURCE", None):
             obs=sample();obs["strategies"]["inout"]["evidence"]=source
             with self.assertRaises(DailyLedgerError):
                 append(fresh(),obs)
