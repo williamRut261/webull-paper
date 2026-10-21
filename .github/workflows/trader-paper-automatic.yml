@@ -1,0 +1,60 @@
+name: Trader ORB + Beethoven PAPER (SANDBOX ONLY)
+on:
+  workflow_dispatch:
+  schedule:
+    # Buy research-approved breakouts only after the 10:15 ET ORB signal.
+    # Best effort, skips late runs; NO real money.
+    - cron: "20 10 * * 1-5"
+      timezone: "America/New_York"
+permissions:
+  contents: read
+concurrency:
+  group: webull-paper-order
+  cancel-in-progress: false
+jobs:
+  trader-paper-morning:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: .
+      WEBULL_PAPER_APP_KEY: ${{ secrets.WEBULL_PAPER_APP_KEY }}
+      WEBULL_PAPER_APP_SECRET: ${{ secrets.WEBULL_PAPER_APP_SECRET }}
+      WEBULL_PAPER_ACCOUNT_SHA256: ${{ secrets.WEBULL_PAPER_ACCOUNT_SHA256 }}
+      WEBULL_PAPER_EXECUTE_ENABLED: "true"
+      WEBULL_TRADER_PAPER_ENABLED: "true"
+      WEBULL_PAPER_ACCOUNT_INDEX: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install sandbox SDK and original strategy dependencies
+        run: python -m pip install -r requirements.txt webull-openapi-python-sdk==3.0.3
+      - name: Eastern trading date
+        id: date
+        run: echo "day=$(TZ=America/New_York date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - name: Restore trader daily deduplication claim
+        id: state
+        uses: actions/cache/restore@v4
+        with:
+          path: state/trader-paper
+          key: webull-trader-paper-v1-${{ steps.date.outputs.day }}
+      - name: Buy only fully-verified OG scanner sandbox breakouts
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          python -m trader_combo.morning 2>&1 | tee logs/trader-morning.log
+      - name: Save daily claim even after uncertain order submissions
+        if: always() && steps.state.outputs.cache-hit != 'true' && hashFiles('state/trader-paper/*.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/trader-paper
+          key: webull-trader-paper-v1-${{ steps.date.outputs.day }}
+      - name: Preserve sandbox scanner entry log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trader-morning-${{ github.run_id }}
+          path: logs/
+          retention-days: 30
