@@ -238,7 +238,7 @@ def select_account(trade,execute):
     return chosen["account_id"],int(index)
 
 
-def portfolio(trade,account_id):
+def portfolio(trade,account_id,allowed_extra=frozenset()):
     balance=verified(trade.account_v2.get_account_balance(account_id),"balance")
     equity=money(balance.get("total_net_liquidation_value"),"sandbox equity")
     cash=money(balance.get("total_cash_balance"),"sandbox cash")
@@ -248,7 +248,7 @@ def portfolio(trade,account_id):
     holdings={}
     for p in positions:
         s=p.get("symbol")
-        if s not in ORIGINAL_EXECUTION_ASSETS or p.get("instrument_type")!="EQUITY":
+        if s not in (ORIGINAL_EXECUTION_ASSETS | frozenset(allowed_extra)) or p.get("instrument_type")!="EQUITY":
             raise RuntimeError("Unmanaged holdings; refuse to rebalance")
         qty=money(p.get("quantity"),"share quantity")
         price=money(p.get("last_price"),"last_price")
@@ -258,9 +258,9 @@ def portfolio(trade,account_id):
     return equity,cash,holdings
 
 
-def order_payload(symbol,side,amount,price,day,sequence):
+def order_payload(symbol,side,amount,price,day,sequence,allowed_extra=frozenset()):
     """Min $5 for fractional shares, never exceed modeled purchase budget."""
-    if symbol not in ORIGINAL_EXECUTION_ASSETS or not math.isfinite(price) or price<=0:
+    if symbol not in (ORIGINAL_EXECUTION_ASSETS | frozenset(allowed_extra)) or not math.isfinite(price) or price<=0:
         raise RuntimeError("Unknown symbol/price")
     if amount<MIN_ORDER_USD or not math.isfinite(amount):
         raise RuntimeError("Order smaller than $5")
