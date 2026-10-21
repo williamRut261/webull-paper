@@ -1,0 +1,222 @@
+"""Automatically enter OG Trader Skill ORB trades: Webull SANDBOX PAPER ONLY.
+
+A separate 19% intraday sleeve is reserved by the Beethoven close runner.
+Purchases are permitted only when Beethoven owns <=80.5% of equity.
+Every scanner position is planned to exit through the 15:48 ET Beethoven run.
+Stop/target here are pre-entry risk estimates, NOT live protective orders.
+"""
+import hashlib
+import json
+import math
+import os
+from datetime import datetime
+from pathlib import Path
+
+from strategy_engine import ORIGINAL_EXECUTION_ASSETS
+from trader_combo.universe import (
+    CANDIDATES, BEETHOVEN_WEIGHT, TRADER_WEIGHT, MAX_POSITIONS,
+    MAX_TOTAL_EXPOSURE, MAX_STOP_DISTANCE, MIN_STOP_DISTANCE,
+    MAX_TRADE_LOSS_FRACTION,
+)
+from trader_combo.scan import run_scan
+from webull_paper.signal_dry_run import NY, SANDBOX
+from webull_paper.sessions import regular_session
+from webull_paper.paper_orders import (
+    collect_snapshots, order_payload, select_account, verified, floor,
+)
+from webull_paper.automatic import (
+    PAPER_HOST, PINNED_SANDBOX_CASH_SHA256, BUY_PRICE_BUFFER,
+    selected_account_matches_pin, checked_portfolio, order_items,
+    preview_and_place,
+)
+
+STATE_DIR = Path("state/trader-paper")
+
+
+def morning_guard(now):
+    if now.tzinfo is None:
+        raise RuntimeError("Scanner trade time needs timezone")
+    local = now.astimezone(NY)
+    minutes = local.hour * 60 + local.minute
+    if not regular_session(local) or not (10 * 60 + 20 <= minutes < 10 * 60 + 40):
+        raise RuntimeError("Trader sleeve only trades 10:20-10:40 ET on regular market days")
+    return True
+
+
+def assert_sandbox():
+    if PAPER_HOST != SANDBOX or SANDBOX != "api.sandbox.webull.com":
+        raise RuntimeError("Trader scanner production brokerage FORBIDDEN")
+    if os.getenv("WEBULL_PAPER_EXECUTE_ENABLED") != "true" or (
+            os.getenv("WEBULL_TRADER_PAPER_ENABLED") != "true"):
+        raise RuntimeError("Trader sleeve requires explicit PAPER enablement")
+    if os.getenv("WEBULL_PAPER_ACCOUNT_INDEX") != "0":
+        raise RuntimeError("Trader sleeve only supports pinned sandbox account index 0")
+    if not os.getenv("WEBULL_PAPER_APP_KEY") or not os.getenv("WEBULL_PAPER_APP_SECRET"):
+        raise RuntimeError("Missing sandbox-only credentials")
+    if not PINNED_SANDBOX_CASH_SHA256:
+        raise RuntimeError("Missing sandbox CASH account pin")
+
+
+def scanner_history_guard(trade, account, day):
+    active = order_items(
+        verified(trade.order_v3.get_order_open(account_id=account), "open orders"),
+        "open orders")
+    if active:
+        raise RuntimeError("Open sandbox orders: do not run another scanner trade")
+    prior = order_items(
+        verified(trade.order_v3.get_order_history(account, page_size=100), "order history"),
+        "order history")
+    if len(prior) >= 100:
+        raise RuntimeError("Unbounded order history; cannot confirm scanner dedupe")
+    prefix = "tr" + day.replace("-", "")
+    if any(str(p.get("client_order_id") or "").startswith(prefix) for p in prior):
+        raise RuntimeError("Already placed Trader sleeve orders today")
+    return True
+
+
+def proposed_entries(signals, equity, cash, holdings, fresh_quotes):
+    """Pure budget and risk sizing. Prices MUST come from Webull snapshots."""
+    if equity < 100 or cash < 0 or not 0 < TRADER_WEIGHT < 0.25:
+        raise RuntimeError("Unusable paper sleeve equity/cash")
+    beethoven_value = sum(x["value"] for s, x in holdings.items()
+                          if s in ORIGINAL_EXECUTION_ASSETS)
+    trader_value = sum(x["value"] for s, x in holdings.items() if s in CANDIDATES)
+    exposure = sum(x["value"] for x in holdings.values())
+    if trader_value > 0.01 or beethoven_value > equity * (BEETHOVEN_WEIGHT + 0.005):
+        raise RuntimeError("Scanner sleeve cannot trade with legacy 99% Beethoven or held scanner positions")
+    if exposure > equity * (BEETHOVEN_WEIGHT + 0.005):
+        raise RuntimeError("Scanner already over-allocated or has unmanaged holdings")
+    if not signals:
+        return []
+    amount_left = min(equity * TRADER_WEIGHT, max(0, cash - equity * 0.01),
+                      max(0, equity * MAX_TOTAL_EXPOSURE - exposure))
+    budget_per = equity * TRADER_WEIGHT / min(MAX_POSITIONS, len(signals))
+    decisions = []
+    for candidate in signals[:MAX_POSITIONS]:
+        symbol = candidate["symbol"]
+        price = fresh_quotes.get(symbol)
+        if symbol not in CANDIDATES or not isinstance(price, (float, int)) or not math.isfinite(price) or price <= 0:
+            raise RuntimeError("Invalid or unauthorized scanner execution quote")
+        if abs(price / candidate["signal_price"] - 1) > 0.01:
+            continue  # Gap already moved; never chase Yahoo's stale signal
+        stop = (candidate["range_low"] + candidate["range_high"]) / 2
+        distance = (price - stop) / price
+        if not MIN_STOP_DISTANCE <= distance <= MAX_STOP_DISTANCE:
+            continue
+        estimated_loss_limit = equity * MAX_TRADE_LOSS_FRACTION
+        price_budget = estimated_loss_limit / distance
+        cash_budget = min(amount_left, budget_per, price_budget) / (1 + BUY_PRICE_BUFFER)
+        amount = floor(cash_budget, 2)
+        if amount < 5 or price > amount:
+            continue  # No fractional stock shares without verified broker eligibility
+        shares = int(amount // price)
+        if shares < 1:
+            continue
+        reserved = shares * price * (1 + BUY_PRICE_BUFFER)
+        if reserved + exposure > equity * MAX_TOTAL_EXPOSURE + 1e-8 or reserved > cash - equity * .01:
+            continue
+        decisions.append({"symbol": symbol, "price": float(price), "shares": shares,
+                          "stop_reference": round(stop, 4),
+                          "target_reference": round(price + 2 * (price - stop), 4),
+                          "estimated_loss_at_stop": round(shares * (price - stop), 2),
+                          "gross_reserved": round(reserved, 2)})
+        amount_left -= reserved
+        if amount_left < 5:
+            break
+    return decisions
+
+
+def claim_day(day):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with (STATE_DIR / (day + ".json")).open("x") as handle:
+        json.dump({"day": day, "trader": "Webull SANDBOX only", "claimed": True}, handle)
+
+
+def main():
+    assert_sandbox()
+    morning_guard(datetime.now(NY))
+    now = datetime.now(NY)
+    day = now.date().isoformat()
+    if (STATE_DIR / (day + ".json")).exists():
+        raise RuntimeError("Local scanner session already claimed")
+    # Read market setups first. A failure never sends a broker order.
+    signals = run_scan(now)
+    morning_guard(datetime.now(NY))
+    from webull.core.client import ApiClient
+    from webull.trade.trade_client import TradeClient
+    from webull.data.data_client import DataClient
+    api = ApiClient(os.environ["WEBULL_PAPER_APP_KEY"],
+                    os.environ["WEBULL_PAPER_APP_SECRET"], "us")
+    api.add_endpoint("us", PAPER_HOST)
+    trade, data = TradeClient(api), DataClient(api)
+    account, index = select_account(trade, execute=True)
+    from webull_paper.readiness import accounts_from
+    accounts = accounts_from(verified(trade.account_v2.get_account_list(), "sandbox accounts"))
+    if not selected_account_matches_pin(account, accounts, index):
+        raise RuntimeError("Scanner did not match verified CASH account pin")
+    scanner_history_guard(trade, account, day)
+    equity, cash, holdings = checked_portfolio(trade, account, CANDIDATES)
+    # Fail before any write on unexpected holdings or an unreduced Beethoven allocation.
+    if set(holdings) - (ORIGINAL_EXECUTION_ASSETS | CANDIDATES):
+        raise RuntimeError("Unknown holdings")
+    fresh = {}
+    trade_times = {}
+    if signals:
+        from webull_paper.paper_orders import collect_snapshots
+        fetched, _ = collect_snapshots(
+            data, [s["symbol"] for s in signals], datetime.now(NY),
+            require_fresh=True, clock=lambda: datetime.now(NY))
+        for symbol, price in fetched.items():
+            age = (datetime.now(NY) - fetched.trade_times[symbol]).total_seconds()
+            if age < 0 or age > 120:
+                raise RuntimeError("Trader intraday entry requires <=120s Webull quote freshness")
+            fresh[symbol] = price
+            trade_times[symbol] = fetched.trade_times[symbol]
+    decisions = proposed_entries(signals, equity, cash, holdings, fresh)
+    print("PAPER_TRADER_PLAN " + json.dumps({
+        "date": day, "mode": "sandbox_only", "source": "OG Trader Skill ORB",
+        "beethoven_allocation": BEETHOVEN_WEIGHT, "scanner_allocation": TRADER_WEIGHT,
+        "candidates_checked": len(CANDIDATES), "signals": len(signals),
+        "orders_planned": decisions, "stop_orders_submitted": False,
+        "exit_plan": "Same-day 15:48 ET close by Beethoven job (best effort)"
+    }, sort_keys=True), flush=True)
+    if not decisions:
+        return 0
+    morning_guard(datetime.now(NY))
+    scanner_history_guard(trade, account, day)
+    claim_day(day)  # Never retry an uncertain submitted order on this runner.
+    for i, d in enumerate(decisions, 1):
+        morning_guard(datetime.now(NY))
+        equity2, cash2, holdings2 = checked_portfolio(trade, account, CANDIDATES)
+        exposure = sum(v["value"] for v in holdings2.values())
+        reserved = d["gross_reserved"]
+        trader_exposure = sum(v["value"] for s, v in holdings2.items()
+                              if s in CANDIDATES)
+        if (exposure + reserved > equity2 * MAX_TOTAL_EXPOSURE + 1e-6
+                or trader_exposure + reserved > equity2 * TRADER_WEIGHT + 1e-6
+                or cash2 - reserved < equity2 * .01):
+            raise RuntimeError("Rechecked scanner order would exceed sleeve or cash")
+        payload = order_payload(
+            d["symbol"], "BUY", d["shares"] * d["price"], d["price"], day, i,
+            allowed_extra=CANDIDATES)
+        payload["client_order_id"] = "tr" + payload["client_order_id"][2:]
+        if float(payload["quantity"]) != d["shares"]:
+            raise RuntimeError("Scanner order quantity did not pass exact preflight")
+        def check_signal_stamp():
+            morning_guard(datetime.now(NY))
+            age = (datetime.now(NY) - trade_times[d["symbol"]]).total_seconds()
+            if not 0 <= age <= 120:
+                raise RuntimeError("Trader quote stale immediately before sandbox order")
+        preview_and_place(trade, account, payload,
+                          before_submit=check_signal_stamp, session_check=morning_guard)
+        print("PAPER_TRADER_FILL_RECORDED " + json.dumps({
+            "symbol": d["symbol"], "quantity": d["shares"],
+            "paper_only": True, "stop_reference": d["stop_reference"],
+            "target_reference": d["target_reference"],
+            "stop_order_live": False
+        }, sort_keys=True), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
