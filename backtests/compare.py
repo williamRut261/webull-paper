@@ -31,6 +31,7 @@ def morning(day, bars, equity, cost_bps=10):
     clock = pd.date_range("2000-01-01 09:30", periods=10, freq="5min").strftime("%H:%M")
     entries=[]
     valid=0
+    valid_symbols=set()
     for symbol in sorted(CANDIDATES):
         f=bars.get((day,symbol))
         if f is None or f.index.duplicated().any() or not set(clock).issubset(f.index):
@@ -39,6 +40,7 @@ def morning(day, bars, equity, cost_bps=10):
         if not np.isfinite(q[["open","high","low","close","volume"]].astype(float).to_numpy()).all():
             continue
         valid+=1
+        valid_symbols.add(symbol)
         if q.iloc[-1]["close"] < 5 or q["volume"].sum()<100000:
             continue
         high=float(q.iloc[:3]["high"].max())
@@ -52,8 +54,12 @@ def morning(day, bars, equity, cost_bps=10):
                 if .1<=pct<=3 and (9-i)*300<=600:
                     entries.append((i,symbol,price,high,low))
                 break
-    if valid!=len(CANDIDATES):
-        return None, [], {"day":day,"coverage":valid,"required":len(CANDIDATES)}
+    # Match the OG scanner's maximum 20% failed/unavailable symbol allowance.
+    # Report missing symbols: partial coverage can understate opportunities.
+    coverage_info={"day":day,"coverage":valid,"required":len(CANDIDATES),
+                   "missing_symbols":sorted(CANDIDATES-valid_symbols)}
+    if len(CANDIDATES)-valid>len(CANDIDATES)//5:
+        return None, [], coverage_info
     entries.sort()
     cash=.19*equity
     pnl=0.
@@ -81,7 +87,7 @@ def morning(day, bars, equity, cost_bps=10):
         pnl+=gain
         trades.append({"date":day,"symbol":s,"shares":shares,"entry_price_proxy":buy,
                        "exit_price_proxy":sell,"net_pnl":round(gain,4)})
-    return pnl/equity,trades,{"day":day,"coverage":valid,"required":len(CANDIDATES)}
+    return pnl/equity,trades,coverage_info
 
 def run(daily,bars,start,end,cost_bps=10):
     if daily.empty or daily.index.has_duplicates:
@@ -109,7 +115,14 @@ def run(daily,bars,start,end,cost_bps=10):
                 r+=w*(p1/p0-1)
         except (KeyError,ValueError,IndexError,TypeError) as exc:
             errors.append({"date":day,"reason":str(exc)[:180]})
-            if began: break # never bridge over missing dates
+            if began:
+                # Stop old contiguous sample, then restart after a missing day;
+                # cannot carry a fictitious portfolio across unpriced sessions.
+                accounts={"beethoven_99":10000.,"beethoven_80_cash_19":10000.,
+                          "beethoven_75_cash_25":10000.}
+                matched={"beethoven_99":10000.,"webull_80_19":10000.}
+                curves=[];paired=[];trades=[]
+                began=False
             continue
         began=True
         # Daily rebalance dollar-proportional approximation. Daily cost on all
@@ -125,11 +138,16 @@ def run(daily,bars,start,end,cost_bps=10):
             orb,new,info=morning(day,bars,matched["webull_80_19"],cost_bps)
             if orb is None:
                 errors.append({"date":day,"reason":"intraday incomplete","detail":info})
-                if paired: break # do not stitch across intraday gaps
+                if paired:
+                    matched={"beethoven_99":10000.,"webull_80_19":10000.}
+                    paired=[];trades=[] # retain only continuous matched session suffix
                 continue
             matched["beethoven_99"]*=1+.99*(r-fee)
             matched["webull_80_19"]*=1+.8*(r-fee)+orb
-            paired.append({"date":day,**matched,"orb_return_contribution":orb})
+            paired.append({"date":day,**matched,"orb_return_contribution":orb,
+                           "scanner_coverage":info["coverage"],
+                           "scanner_required":info["required"],
+                           "scanner_missing":",".join(info["missing_symbols"])})
             trades+=new
     return pd.DataFrame(curves),pd.DataFrame(paired),pd.DataFrame(trades),errors
 
@@ -159,7 +177,9 @@ def main():
     long.to_csv(dest/"long_beethoven.csv",index=False)
     match.to_csv(dest/"matched_80_19.csv",index=False)
     trades.to_csv(dest/"orb_trades.csv",index=False)
-    report={"long":{k:stats(long,k) for k in
+    report={"daily_period":([long.iloc[0]["date"],long.iloc[-1]["date"]] if not long.empty else None),
+            "matched_period":([match.iloc[0]["date"],match.iloc[-1]["date"]] if not match.empty else None),
+            "long":{k:stats(long,k) for k in
                      ("beethoven_99","beethoven_80_cash_19","beethoven_75_cash_25")},
             "matched":{k:stats(match,k) for k in ("beethoven_99","webull_80_19")},
             "matched_days":len(match),"orb_trades":len(trades),"issues":issues[:40],
