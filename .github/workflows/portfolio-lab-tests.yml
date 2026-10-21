@@ -4,6 +4,8 @@ on:
     paths:
       - 'research/portfolio_lab/**'
       - 'tests/test_portfolio_lab.py'
+      - 'tests/test_portfolio_daily.py'
+      - 'tests/test_four_signals.py'
       - '.github/workflows/portfolio-lab-tests.yml'
   workflow_dispatch:
 permissions:
@@ -23,6 +25,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p test_portfolio_lab.py -v
           python -m unittest discover -s tests -p test_portfolio_daily.py -v
+          python -m unittest discover -s tests -p test_four_signals.py -v
       - name: Sample JSON portfolio netting (synthetic input only)
         run: |
           python -m research.portfolio_lab.cli --config research/portfolio_lab/config.example.json --signals research/portfolio_lab/signals.example.json --as-of 2026-10-20
