@@ -8,14 +8,17 @@ Research-only branch. Does not alter any LIVE or PAPER order runner.
    using prior-day daily adjusted CLOSE signals, next-close returns, and a
    conservative per-day proportional transaction cost approximation.
 2. The 80/19 combo versus 99% Beethoven only on matched sessions having
-   complete 5-minute bars for the full reviewed Day Trader stock/ETF universe.
+   sufficient 5-minute charts for the reviewed Day Trader stock/ETF universe.
+   This follows the original scanner's 20% maximum-failed-chart threshold;
+   missing tickers are explicitly listed in each matched report row.
    15-minute opening range, first breakout, 10:20 entry proxy, 15:45 exit proxy,
    3 positions max, whole shares, 19% sleeve and 0.3% reference stop-risk cap.
 
 **Critical:** historical five-minute data for the full requested 2024–2026
 window is not freely available from Yahoo (typically under 60 days). This
-tool never fabricates older bars. If required candles are missing, the 80/19
-comparison will be **unavailable**, not zero. The same limitation applies to
+tool never fabricates older bars. If more than 20% of scanner charts are
+missing, the 80/19 comparison is **unavailable**, not zero. Days with lesser
+missing coverage are flagged and should be interpreted cautiously. The same limitation applies to
 tickers that did not yet exist during earlier requested dates.
 
 The existing Backtesting.py library is useful for *single instruments* but
@@ -41,3 +44,18 @@ orb_trades.csv and backtests/data/coverage.json (unavailable history listed).
 
 Do not merge into a production trading branch without review. Never publish
 credentials or account data as GitHub artifacts.
+
+## Interpreting results
+
+`report.json` now lists the actual first/last dates of every return window,
+including dates excluded when a strategy symbol did not yet trade. The primary
+published performance uses the **longest uninterrupted valid period**. It does
+not claim the full 2024–2026 dates if earlier ETFs or stocks did not exist.
+Annualizing any small matched period is mathematically possible but **not** a
+credible performance forecast. The short-date daily-close model cannot establish
+that a real brokerage account would earn the historical paper simulation.
+
+The combined matched return is the sum of the 80% Beethoven contribution and
+the scanner sleeve; `scanner_missing` makes any incomplete chart coverage
+visible. The scanner's stops/targets remain planning references, not submitted
+protective orders. Fees and fills are approximate, never audited live results.
