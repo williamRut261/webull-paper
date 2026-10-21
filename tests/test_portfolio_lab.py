@@ -95,6 +95,8 @@ class PortfolioLabTests(unittest.TestCase):
 
     def test_inout_recovers_after_15_nonshock_sessions(self):
         f=self.history()
+        for i,col in enumerate(f.columns):
+            f[col]=(80+i)*np.power(1.001, np.arange(len(f)))
         state=RegimeState(is_in=False,days_since_exit=13)
         # Synthetic smooth uptrend should produce no bottom 1% shocks
         z=inout_from_closes(f,state)

@@ -64,7 +64,7 @@ def inout_from_closes(closes: pd.DataFrame, state=RegimeState()) -> RegimeResult
         raise ValueError("Insufficient historical regime observations")
     # Threshold computed ONLY from past sessions; never from future.
     cutoff = recent.iloc[:-1].quantile(.01)
-    shock = recent.iloc[-1] < cutoff
+    shock = recent.iloc[-1] < (cutoff - 1e-9)
     triggered = tuple(sorted(shock.index[shock].tolist()))
     if triggered:
         next_state = RegimeState(is_in=False, days_since_exit=0, as_of=as_of)
