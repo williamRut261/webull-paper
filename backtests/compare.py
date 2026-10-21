@@ -207,7 +207,10 @@ def run(daily, bars, start, end, cost_bps=10):
             matched["webull_80_19"] *= (1+r80+scanner_return)
             pair_rows.append({"date": day, **matched,
                               "orb_return_contribution": scanner_return,
-                              "orb_trades": len(new_trades)})
+                              "orb_trades": len(new_trades),
+                              "scanner_coverage": detail["coverage"],
+                              "scanner_required": detail["required"],
+                              "scanner_missing": ",".join(detail["missing_symbols"])})
             trades.extend(new_trades)
     close_long()
     close_paired()
@@ -220,7 +223,8 @@ def run(daily, bars, start, end, cost_bps=10):
                        "first_issues": issues,
                        "note": ("Only the longest uninterrupted valid sample is compared; "
                                 "no short window is labeled a three-year backtest. "
-                                "Inactive historical ETFs can make older windows invalid.")}
+                                "Missing scanner charts are disclosed; up to 20% missing is allowed "
+                                "as in the actual OG scanner gate. Historical listings cause gaps.")}
     return long, paired, pd.DataFrame(trades), report_coverage
 
 
