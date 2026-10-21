@@ -210,9 +210,15 @@ def make_orders(trade, account_id, targets, quotes, day, expected_exposure=MAX_E
         close_window(datetime.now(NY))
         quotes.validate(required, datetime.now(NY))
     revalidate()  # All required sell/buy/signal inputs before the first write.
+    # A tiny remaining scanner position cannot be silently considered "flat".
+    if any(sym in allowed_extra and pos["value"] < MIN_ORDER_USD
+           for sym, pos in holdings.items()):
+        raise RuntimeError("Unliquidatable scanner position below $5; do not claim a clean exit")
     for symbol, position in sorted(holdings.items()):
         excess = position["value"] - equity * targets.get(symbol, 0)
-        if excess < max(MIN_ORDER_USD, equity * 0.01):
+        tolerance = MIN_ORDER_USD if symbol in allowed_extra else max(
+            MIN_ORDER_USD, equity * 0.01)
+        if excess < tolerance:
             continue
         close_window(datetime.now(NY))
         if symbol not in quotes or quotes[symbol] <= 0:
@@ -347,6 +353,8 @@ def main():
         _, _, existing = checked_portfolio(trade, account_id, allowed_extra)
         extra_held = sorted(set(existing) & allowed_extra)
         if extra_held:
+            from trader_combo.provenance import verify_scanner_position_ownership
+            verify_scanner_position_ownership(trade.order_v3, account_id, extra_held)
             extra_prices, _ = collect_snapshots(
                 data, extra_held, datetime.now(NY), require_fresh=True,
                 clock=lambda: datetime.now(NY))
