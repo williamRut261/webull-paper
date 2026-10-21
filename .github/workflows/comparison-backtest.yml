@@ -1,0 +1,37 @@
+name: Historical Beethoven 80-19 Research (NO ORDERS)
+on:
+  pull_request:
+    paths:
+      - "backtests/**"
+      - ".github/workflows/comparison-backtest.yml"
+      - "tests/test_comparison_backtest.py"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -r requirements.txt "yfinance>=0.2.65" "backtesting>=0.6"
+      - name: Synthetic research tests
+        run: python -m unittest discover -s tests -p test_comparison_backtest.py -v
+      - name: Download real public historical data
+        run: python -m backtests.download --start 2024-01-01 --end 2026-10-20 --days 25
+      - name: Compute comparable results only if data are complete
+        run: python -m backtests.compare --start 2024-01-01 --end 2026-10-20
+      - name: Preserve result and missing-data evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beethoven-comparison-research
+          retention-days: 30
+          path: |
+            backtests/data/coverage.json
+            backtests/results/
