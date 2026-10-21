@@ -267,7 +267,17 @@ def make_orders(trade, account_id, targets, quotes, day, expected_exposure=MAX_E
                 trade, account_id, symbol, "SELL", position["qty"],
                 requested, allowed_extra)
         else:
-            raise RuntimeError("Too many paper liquidation attempts for " + symbol)
+            # The final sale may leave only untradeable sub-$5 dust. Do not
+            # label that as repeated-liquidation failure; report it below.
+            remaining = holdings.get(symbol)
+            if remaining:
+                residual_excess = (remaining["value"] -
+                                   equity * targets.get(symbol, 0))
+                residual_limit = (max(MIN_ORDER_USD, equity * .01)
+                                  if symbol in targets else MIN_ORDER_USD)
+                if residual_excess >= residual_limit:
+                    raise RuntimeError(
+                        "Too many paper liquidation attempts for " + symbol)
     # No non-target position >= $5 may be silently carried overnight.
     # Sub-minimum Beethoven dust is reported explicitly; unclosed scanner
     # positions are fatal because ORB is an intraday-only sleeve.
