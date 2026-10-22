@@ -50,15 +50,18 @@ class Orders:
         self.calls = []
         self.fail = fail
 
-    def get_order_history(self, account_id, page_size=None):
+    def list_order_history(self, account_id, start_time=None, end_time=None,
+                           pagination_key=None):
         assert account_id == ACCOUNT_ID
-        assert page_size == 100
         self.calls.append("GET_HISTORY")
         if self.fail:
             raise ConnectionError("secret account exception")
-        return Response([{"symbol": "GDXD", "side": "SELL",
-                          "quantity": 4, "order_status": "FILLED",
-                          "avg_fill_price": 21.50}])
+        return Response({"data": [{"orders": [{
+            "symbol": "GDXD", "side": "SELL", "status": "FILLED",
+            "total_quantity": "4", "filled_quantity": "4",
+            "filled_price": "21.50",
+            "place_time_at": "2026-10-22T06:00:00.000Z",
+        }]}]})
 
 
 class FakeTrade:
@@ -128,6 +131,11 @@ class CloudDashboardSafetyTests(unittest.TestCase):
         self.assertEqual(snap["cash"], "$999.17")
         self.assertEqual(snap["positions"][0]["symbol"], "GDXD")
         self.assertEqual(snap["history"][0]["status"], "FILLED")
+        self.assertEqual(snap["history"][0]["symbol"], "GDXD")
+        self.assertEqual(snap["history"][0]["side"], "SELL")
+        self.assertEqual(snap["history"][0]["quantity"], "4 / 4")
+        self.assertEqual(snap["history"][0]["price"], "$21.50")
+        self.assertIn("2026-10-22", snap["history"][0]["date"])
         self.assertEqual(broker.account_v2.calls,
                          ["GET_ACCOUNTS", "GET_BALANCE", "GET_POSITIONS"])
         self.assertEqual(broker.order_v3.calls, ["GET_HISTORY"])
@@ -171,6 +179,26 @@ class CloudDashboardSafetyTests(unittest.TestCase):
             records({"nonsense": 1}, ("orders",))
         with self.assertRaises(ValueError):
             normalize_history({"nonsense": 1})
+
+    def test_history_flattens_group_orders_and_does_not_invent_fill_price(self):
+        history = normalize_history({"data": [{
+            "place_time_at": "2026-10-22T06:00:00.000Z",
+            "orders": [
+                {"symbol": "GDXD", "side": "BUY", "status": "SUBMITTED",
+                 "total_quantity": "10", "filled_quantity": "0",
+                 "filled_price": "0"},
+                {"symbol": "SOXS", "side": "SELL", "status": "FILLED",
+                 "total_quantity": "1.5", "filled_quantity": "1.5",
+                 "filled_price": "44.29", "place_time_at": "order-time"},
+            ],
+        }]})
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0]["date"], "2026-10-22T06:00:00.000Z")
+        self.assertEqual(history[0]["quantity"], "0 / 10")
+        self.assertEqual(history[0]["price"], "Unavailable")
+        self.assertEqual(history[1]["date"], "order-time")
+        self.assertEqual(history[1]["quantity"], "1.5 / 1.5")
+        self.assertEqual(history[1]["price"], "$44.29")
 
     def test_no_anonymous_access_even_for_missing_config(self):
         with patch.dict(os.environ, {}, clear=True):
