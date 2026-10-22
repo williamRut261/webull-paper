@@ -141,6 +141,47 @@ class CloudDashboardSafetyTests(unittest.TestCase):
         self.assertEqual(broker.order_v3.calls, ["GET_HISTORY"])
         self.assertNotIn(ACCOUNT_ID, str(snap))
 
+    def test_broker_vs_quoted_holdings_difference_is_not_profit(self):
+        broker = FakeTrade()
+        # Synthetic example: a different broker valuation must not be erased.
+        with patch.object(
+            broker.account_v2, "get_account_balance",
+            return_value=Response({
+                "total_net_liquidation_value": "1250.00",
+                "total_cash_balance": "1000.00",
+                "total_market_value": "250.00",
+            }),
+        ):
+            snap = read_snapshot(broker, PIN)
+        self.assertEqual(snap["broker_market_value"], "$250.00")
+        self.assertEqual(snap["quoted_market_value"], "$234.50")
+        self.assertEqual(snap["quote_difference"], "$15.50")
+        self.assertEqual(snap["equity_residual"], "$0.00")
+        self.assertIn("not trading profit", snap["balance_note"].lower())
+
+    def test_nonzero_accounting_residual_is_not_assigned_a_cause(self):
+        broker = FakeTrade()
+        with patch.object(
+            broker.account_v2, "get_account_balance",
+            return_value=Response({
+                "total_net_liquidation_value": "1300.00",
+                "total_cash_balance": "1000.00",
+                "total_market_value": "234.50",
+            }),
+        ):
+            snap = read_snapshot(broker, PIN)
+        self.assertEqual(snap["quote_difference"], "$0.00")
+        self.assertEqual(snap["equity_residual"], "$65.50")
+        self.assertIn("UNEXPLAINED", snap["balance_note"])
+
+    def test_missing_broker_market_value_stays_unavailable(self):
+        broker = FakeTrade()
+        snap = read_snapshot(broker, PIN)
+        self.assertEqual(snap["broker_market_value"], "Unavailable")
+        self.assertEqual(snap["quote_difference"], "Unavailable")
+        self.assertEqual(snap["equity_residual"], "Unavailable")
+        self.assertEqual(snap["quoted_market_value"], "$234.50")
+
     def test_history_unavailable_is_not_silently_empty_or_logged_with_details(self):
         with self.assertLogs("dashboard.app", level="WARNING") as captured:
             snap = read_snapshot(FakeTrade(True), PIN)
