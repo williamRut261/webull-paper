@@ -62,6 +62,15 @@ def dollars(number):
     return "Unavailable" if number is None else f"${number:,.2f}"
 
 
+def first_value(entry, names):
+    """Return the first present field while preserving valid zero values."""
+    for name in names:
+        value = entry.get(name)
+        if value is not None and value != "":
+            return value
+    return None
+
+
 def choose_account(accounts, index, sha256):
     if not PIN_REGEX.fullmatch(sha256):
         raise ValueError("Missing or invalid account fingerprint")
@@ -101,21 +110,43 @@ def normalize_positions(raw):
 def normalize_history(raw):
     items = records(raw, ("data", "orders", "list", "results", "items"))
     result = []
-    for entry in items[:100]:
-        if not isinstance(entry, dict):
+    for group in items:
+        if not isinstance(group, dict):
             continue
-        result.append({
-            "date": str(entry.get("create_time") or entry.get("created_time")
-                        or entry.get("order_time") or "Unavailable")[:40],
-            "symbol": str(entry.get("symbol") or "—")[:12],
-            "side": str(entry.get("side") or "—")[:10],
-            "status": str(entry.get("order_status") or entry.get("status")
-                          or "Unknown")[:30],
-            "quantity": str(entry.get("filled_quantity")
-                            or entry.get("quantity") or "—")[:20],
-            "price": dollars(amount(entry.get("avg_fill_price")
-                                     or entry.get("average_filled_price"))),
-        })
+        nested = group.get("orders")
+        entries = nested if isinstance(nested, list) else [group]
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            # History responses group one or more actual orders under a parent
+            # record. Parent fields are used only as fallback metadata.
+            order = {**group, **entry}
+            filled = first_value(order, ("filled_quantity",))
+            total = first_value(order, ("total_quantity", "quantity"))
+            quantity = (
+                f"{filled} / {total}" if filled is not None and total is not None
+                else str(filled if filled is not None else total or "—")
+            )
+            fill_price = amount(first_value(
+                order, ("filled_price", "avg_fill_price", "average_filled_price")
+            ))
+            if filled is not None and amount(filled) == 0:
+                fill_price = None
+            result.append({
+                "date": str(first_value(order, (
+                    "place_time_at", "create_time", "created_time", "order_time",
+                    "place_time", "filled_time_at",
+                )) or "Unavailable")[:40],
+                "symbol": str(first_value(order, ("symbol",)) or "—")[:12],
+                "side": str(first_value(order, ("side",)) or "—")[:10],
+                "status": str(first_value(order, (
+                    "status", "order_status",
+                )) or "Unknown")[:30],
+                "quantity": quantity[:40],
+                "price": dollars(fill_price),
+            })
+            if len(result) >= 100:
+                return result
     return result
 
 
@@ -166,12 +197,15 @@ def read_snapshot(trade, expected_pin, index="0"):
         history = _read_stage(
             "order_history",
             lambda: normalize_history(verified(
-                trade.order_v3.get_order_history(account_id, page_size=100),
+                trade.order_v3.list_order_history(account_id),
                 "order history",
             )),
             optional=True,
         )
-        history_note = "Latest available 100 orders at most; not a full-history guarantee."
+        history_note = (
+            "Latest available history page; Webull may delay status updates. "
+            "Filled / total quantities are shown where available."
+        )
     except Exception:
         history, history_note = [], "Order history unavailable; no history is inferred."
     return {
@@ -252,7 +286,7 @@ th{color:#bdcbe0;font-weight:500}td{font-variant-numeric:tabular-nums}
 </table></div></section><div style="height:16px"></div>
 <section class="box"><h2>Recent orders</h2><p class="muted">{{ snapshot.history_note }}</p>
 <div class="scroll"><table><tr><th>Date</th><th>Symbol</th><th>Side</th>
-<th>Status</th><th>Quantity</th><th>Average fill</th></tr>
+<th>Status</th><th>Filled / total</th><th>Average fill</th></tr>
 {% for o in snapshot.history %}<tr><td>{{o.date}}</td><td>{{o.symbol}}</td>
 <td>{{o.side}}</td><td>{{o.status}}</td><td>{{o.quantity}}</td>
 <td>{{o.price}}</td></tr>
