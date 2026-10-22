@@ -367,6 +367,16 @@ def read_agent_feed(opener=urlopen):
 
 
 # Public read-only workflow metadata, not private credentials or CI logs.
+OFFICE_ROLES = (
+    ("Market Analyst", "Maya", "Studies market regime", "Market breadth · trend", "#73b7fb", "a"),
+    ("Technical Analyst", "Theo", "Checks price indicators", "RSI · SMA · momentum", "#a58cf1", "b"),
+    ("News Researcher", "Nova", "Assesses missing news context", "News feed not connected", "#e2aa70", "c"),
+    ("Strategy Analyst", "Iris", "Tests trading hypotheses", "Signals · costs", "#83d4b6", "d"),
+    ("Risk Manager", "Sage", "Evaluates limits and vetoes", "Exposure · risk checks", "#e88893", "e"),
+    ("Desk Lead", "Atlas", "Synthesizes specialist views", "Consensus · disagreement", "#e4bb78", "f"),
+    ("Trade Reviewer", "Quinn", "Challenges the trade idea", "Independent review", "#91c6cb", "g"),
+)
+
 OFFICE_RUNS_APIS = (
     # Workflow-scoped pages are small and cannot be displaced by frequent CI
     # pushes. The former repo-wide 35-run response exceeded its 80 KB cap.
