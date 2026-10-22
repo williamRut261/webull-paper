@@ -99,10 +99,11 @@ def normalize_positions(raw):
             raise RuntimeError("Unrecognized broker position symbol")
         quantity = amount(entry.get("quantity"))
         last = amount(entry.get("last_price"))
+        position_value = last * quantity if last is not None and quantity is not None else None
         positions.append({
             "symbol": symbol, "quantity": quantity, "last_price": dollars(last),
-            "market_value": dollars(last * quantity)
-            if last is not None and quantity is not None else "Unavailable",
+            "market_value": dollars(position_value),
+            "market_value_raw": position_value,
         })
     return positions
 
@@ -184,9 +185,9 @@ def read_snapshot(trade, expected_pin, index="0"):
         cash = amount(balance.get("total_cash_balance"))
         if equity is None or cash is None:
             raise RuntimeError("Sandbox equity or cash unavailable")
-        return equity, cash
+        return equity, cash, amount(balance.get("total_market_value"))
 
-    equity, cash = _read_stage("account_balance", read_balance)
+    equity, cash, broker_market_value = _read_stage("account_balance", read_balance)
     positions = _read_stage(
         "positions",
         lambda: normalize_positions(verified(
@@ -208,8 +209,33 @@ def read_snapshot(trade, expected_pin, index="0"):
         )
     except Exception:
         history, history_note = [], "Order history unavailable; no history is inferred."
+    # Last-price x quantity is a client-side estimate and may not equal the
+    # broker's authoritative total_market_value. Never silently force a match.
+    quoted_total = (
+        sum(p["market_value_raw"] for p in positions)
+        if all(p["market_value_raw"] is not None for p in positions)
+        else None
+    )
+    broker_vs_quotes = (
+        round(broker_market_value - quoted_total, 2)
+        if broker_market_value is not None and quoted_total is not None else None
+    )
+    unallocated_equity = (
+        round(equity - cash - broker_market_value, 2)
+        if broker_market_value is not None else None
+    )
     return {
         "equity": dollars(equity), "cash": dollars(cash),
+        "broker_market_value": dollars(broker_market_value),
+        "quoted_market_value": dollars(quoted_total),
+        "quote_difference": dollars(broker_vs_quotes),
+        "equity_residual": dollars(unallocated_equity),
+        "balance_note": (
+            "Broker-reported holdings and share × last-price estimates may differ "
+            "because of pricing timestamps or valuations. The remaining equity "
+            "difference is an UNEXPLAINED accounting residual, not trading profit. "
+            "Consult detailed Webull balance fields before attributing it."
+        ),
         "positions": positions, "history": history,
         "history_note": history_note,
         "as_of": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -278,6 +304,14 @@ th{color:#bdcbe0;font-weight:500}td{font-variant-numeric:tabular-nums}
 <div class="stats"><section class="box"><small>Total account equity</small>
 <div class="number">{{ snapshot.equity }}</div></section>
 <section class="box"><small>Cash balance</small><div class="number">{{ snapshot.cash }}</div></section></div>
+<section class="box"><h2>Account value reconciliation</h2>
+<div class="scroll"><table>
+<tr><th>Broker-reported holding value</th><td>{{ snapshot.broker_market_value }}</td></tr>
+<tr><th>Estimated holdings (shares × last price)</th><td>{{ snapshot.quoted_market_value }}</td></tr>
+<tr><th>Broker holdings minus estimated holdings</th><td>{{ snapshot.quote_difference }}</td></tr>
+<tr><th>Equity minus cash and broker holdings</th><td>{{ snapshot.equity_residual }}</td></tr>
+</table></div><p class="muted">{{ snapshot.balance_note }}</p></section>
+<div style="height:16px"></div>
 <section class="box"><h2>Current positions</h2><div class="scroll"><table>
 <tr><th>Symbol</th><th>Quantity</th><th>Last price</th><th>Market value</th></tr>
 {% for p in snapshot.positions %}<tr><td>{{p.symbol}}</td><td>{{p.quantity}}</td>
