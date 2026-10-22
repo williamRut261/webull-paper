@@ -136,12 +136,42 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertIn("prefers-reduced-motion", source)
         self.assertIn("body:has(#motion:not(:checked))", source)
         self.assertNotIn("https://", source)
-        self.assertNotIn("<script", source)
+        self.assertIn('<script src="/office/motion.js" defer></script>', source)
+        self.assertEqual(source.count("<script"), 1)
+        self.assertIn("data-workflow-active", source)
+        self.assertIn("agent-walker", source)
+        self.assertIn("@keyframes step-leg", source)
         self.assertIn('aria-label="Animated virtual research office"', source)
         self.assertIn("not exposed", source.lower())
         docker = (Path(__file__).resolve().parents[1] /
                   "dashboard/Dockerfile").read_text()
         self.assertIn("COPY templates/ /app/templates/", docker)
+        self.assertIn("COPY static/ /app/static/", docker)
+
+    def test_animated_walking_script_is_authenticated_and_broker_isolated(self):
+        code = (Path(__file__).resolve().parents[1] /
+                "dashboard/static/office-motion.js").read_text()
+        self.assertIn("agent-walker", code)
+        self.assertIn("is-wandering", code)
+        self.assertIn("visibilitychange", code)
+        self.assertIn("prefers-reduced-motion", code)
+        for forbidden in ("place_order", "fetch(", "XMLHttpRequest", "axios",
+                          "Webull", "create_order", "submit_order"):
+            self.assertNotIn(forbidden, code)
+        audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
+        with patch.dict(os.environ, {"IAP_AUDIENCE": audience,
+                                     "DASHBOARD_ALLOWED_EMAIL": "owner@example.com"}, clear=True):
+            with app.test_client() as client:
+                self.assertEqual(client.get("/office/motion.js").status_code, 403)
+            with patch("dashboard.app.id_token.verify_token", return_value={
+                "iss": "https://cloud.google.com/iap", "email": "owner@example.com"
+            }):
+                with app.test_client() as client:
+                    response = client.get("/office/motion.js", headers={
+                        "X-Goog-Iap-Jwt-Assertion": "signed"})
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn(b"agent-walker", response.data)
+                    self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
 
     def test_missing_report_stays_unavailable_not_fake_lively_personnel(self):
         audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
