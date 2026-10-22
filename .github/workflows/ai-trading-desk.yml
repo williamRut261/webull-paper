@@ -53,7 +53,7 @@ jobs:
           set -o pipefail
           python -m research.ai_desk --provider "$AI_DESK_PROVIDER" --symbol "$AI_DESK_FOCUS" --out out/ai-desk
       - name: Update isolated virtual paper ledger and sanitized agent feed
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         run: |
           if [ -f out/ai-desk/report.json ]; then
             kill_arg=""
@@ -66,7 +66,7 @@ jobs:
             echo "No research report; previous public status remains unchanged."
           fi
       - name: Publish public research-only snapshot (never broker credentials)
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         run: |
           # Both files contain allowlisted agent opinions and VIRTUAL cash only.
           # Never publish raw API responses, model prompts, secret env, or account data.
