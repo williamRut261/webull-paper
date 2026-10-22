@@ -197,6 +197,32 @@ class AgentsSandboxTests(unittest.TestCase):
                              self.NOW,dry_run=True,clock=lambda:self.NOW)
             self.assertEqual(flat["status"],"NO_POSITION_TO_SELL")
 
+    def test_only_iap_owner_can_discover_separate_cash_accounts(self):
+        from dashboard.app import app
+        audience="/projects/123/locations/us-central1/services/webull-paper-viewer"
+        broker=Broker()
+        with patch.dict("os.environ",{"IAP_AUDIENCE":audience,
+                                       "DASHBOARD_ALLOWED_EMAIL":"owner@example.com"},
+                                       clear=True):
+            with app.test_client() as client:
+                self.assertEqual(client.get("/office/agent-sandbox-accounts").status_code,403)
+            with patch("dashboard.app.id_token.verify_token",return_value={
+                    "iss":"https://cloud.google.com/iap","email":"owner@example.com"}), \
+                 patch("dashboard.app.sandbox_trade_client",return_value=broker):
+                with app.test_client() as client:
+                    headers={"X-Goog-Iap-Jwt-Assertion":"signed"}
+                    response=client.get("/office/agent-sandbox-accounts",headers=headers)
+                    self.assertEqual(response.status_code,200)
+                    self.assertEqual(response.headers["Cache-Control"],"private, no-store")
+                    self.assertEqual(response.json["orders_submitted"],0)
+                    self.assertEqual(len(response.json["candidates"]),1)
+                    self.assertEqual(response.json["candidates"][0]["index"],1)
+                    self.assertEqual(response.json["candidates"][0]["type"],"CASH")
+                    self.assertNotIn("isolated-agents",response.get_data(as_text=True))
+                    self.assertNotIn("original-beethoven",response.get_data(as_text=True))
+                    self.assertEqual(client.post("/office/agent-sandbox-accounts",
+                                             headers=headers).status_code,405)
+
     def test_broker_host_pinned_and_auto_execution_default_disabled(self):
         source=(Path(__file__).resolve().parents[1]/
                 "research/agent_sandbox_executor.py").read_text()
