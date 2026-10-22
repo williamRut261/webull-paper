@@ -365,6 +365,271 @@ def read_agent_feed(opener=urlopen):
     }
 
 
+
+# Public read-only workflow metadata, not private credentials or CI logs.
+OFFICE_RUNS_API = (
+    "https://api.github.com/repos/williamRut261/webull-paper/"
+    "actions/runs?per_page=35"
+)
+OFFICE_ROLES = (
+    ("Market Analyst", "Maya", "Studies market regime", "Market breadth · trend", "#73b7fb", "a"),
+    ("Technical Analyst", "Theo", "Checks price indicators", "RSI · SMA · momentum", "#a58cf1", "b"),
+    ("News Researcher", "Nova", "Assesses missing news context", "News feed not connected", "#e2aa70", "c"),
+    ("Strategy Analyst", "Iris", "Tests trading hypotheses", "Signals · costs", "#83d4b6", "d"),
+    ("Risk Manager", "Sage", "Evaluates limits and vetoes", "Exposure · risk checks", "#e88893", "e"),
+    ("Desk Lead", "Atlas", "Synthesizes specialist views", "Consensus · disagreement", "#e4bb78", "f"),
+    ("Trade Reviewer", "Quinn", "Challenges the trade idea", "Independent review", "#91c6cb", "g"),
+)
+
+
+def read_office_run(opener=urlopen):
+    """Retrieve public GitHub Actions state, never infer agent-level progress."""
+    req = UrlRequest(
+        OFFICE_RUNS_API, headers={
+            "User-Agent": "webull-paper-agent-office",
+            "Accept": "application/vnd.github+json",
+        })
+    with opener(req, timeout=3) as response:
+        raw = response.read(80001)
+    if len(raw) > 80000:
+        raise ValueError("Actions metadata oversized")
+    data = json.loads(raw)
+    runs = data.get("workflow_runs")
+    if not isinstance(runs, list):
+        raise ValueError("Malformed Actions metadata")
+    relevant = [r for r in runs if isinstance(r, dict) and r.get("name") in (
+        "AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)",
+        "One-Time Seven-Agent Provider Verification (NO BROKER)",
+    ) and r.get("head_branch") == "main"]
+    if not relevant:
+        return None
+    latest = relevant[0]
+    state = str(latest.get("status", ""))[:24]
+    conclusion = str(latest.get("conclusion") or "")[:24]
+    if state not in ("queued", "waiting", "pending", "in_progress", "completed", "requested"):
+        raise ValueError("Unexpected workflow run state")
+    run_id = latest.get("id")
+    if type(run_id) is not int or run_id <= 0:
+        raise ValueError("Missing run ID")
+    return {
+        "state": state, "conclusion": conclusion,
+        "active": state == "in_progress",
+        "queued": state in ("queued", "waiting", "pending", "requested"),
+        "run_url": (
+            "https://github.com/williamRut261/webull-paper/actions/runs/" + str(run_id)
+        ),
+        "created": str(latest.get("created_at") or "")[:20],
+        "type": "Scheduled AI desk" if latest.get("name", "").startswith("AI Trading") else "Provider verification",
+    }
+
+
+OFFICE_TEMPLATE = """
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{% if run and (run.active or run.queued) %}
+<meta http-equiv="refresh" content="30">
+{% endif %}
+<title>Agent Office · Webull PAPER</title>
+<style>
+:root{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;color-scheme:dark;
+ --txt:#edf3ff;--muted:#9eb1cb;--border:#2b4057;--glass:#172438}
+*{box-sizing:border-box}
+body{margin:0;background:#0a111f;color:var(--txt)}
+a{color:#92d1ff;text-decoration:none}a:hover{text-decoration:underline}
+.page{max-width:1360px;margin:0 auto;padding:22px 22px 60px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:26px;flex-wrap:wrap}
+.brand{font-size:.86rem;letter-spacing:.18em;font-weight:750;color:#adc7e5}
+.links{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
+.links a{padding:9px 13px;border:1px solid #415878;border-radius:12px}
+.hero{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:20px}
+h1{margin:0 0 9px;font-size:clamp(2rem,4vw,3.3rem);letter-spacing:-.055em}
+h2{font-size:1.15rem;letter-spacing:-.02em}
+.muted{color:var(--muted)}
+.intro{max-width:720px;margin:0;font-size:.95rem;line-height:1.5}
+.state{display:flex;gap:9px;align-items:center;border:1px solid #34506a;background:#17273b;border-radius:99px;padding:12px 17px;font-size:.84rem}
+.light{width:11px;height:11px;background:#8494ab;border-radius:50%;box-shadow:0 0 0 5px #8494ab18}
+.state.active .light{background:#47d7a7;box-shadow:0 0 14px #47d7a777;animation:pulse 1.2s ease-in-out infinite}
+.state.fail .light{background:#ef9c91}
+.state.ok .light{background:#47d7a7}
+@keyframes pulse{50%{opacity:.42;transform:scale(.8)}}
+.scene{padding:18px;border:1px solid #38506e;border-radius:25px;
+ background:radial-gradient(circle at 18% 0%,#25435c 0%,transparent 37%),
+ radial-gradient(circle at 96% 65%,#192d54 0%,transparent 42%),#101c2c;
+ box-shadow:inset 0 0 45px #08111e88}
+.scene-heading{display:flex;justify-content:space-between;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:18px}
+.scene-heading strong{font-size:.96rem}
+.legend{font-size:.79rem;color:#a8bcd6}
+.floor{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px}
+.station{position:relative;background:linear-gradient(180deg,#243449 0%,#19273c 100%);
+ border:1px solid #4a607b;border-radius:19px;min-height:278px;overflow:hidden;padding:13px;
+ display:flex;flex-direction:column;justify-content:space-between}
+.station:before{content:"";position:absolute;left:0;right:0;bottom:0;height:79px;background:#263b46;
+ border-top:2px solid #466073;opacity:.52}
+.station-title{position:relative;z-index:2;display:flex;justify-content:space-between;gap:5px;align-items:start}
+.agent-name{font-weight:780;font-size:.97rem}
+.agent-role{font-size:.76rem;color:#b1c3dd;margin-top:2px}
+.activity{text-align:right;font-size:.67rem;letter-spacing:.045em;color:#b8c9dc;background:#122136;
+ border-radius:99px;padding:5px 8px;white-space:nowrap}
+.activity.lit{color:#b7ffe8;background:#1b4f4d}
+.office-art{position:relative;height:111px;z-index:1;margin-top:5px}
+.person{position:absolute;left:25px;top:8px;width:65px;height:99px}
+.hair{position:absolute;z-index:3;top:0;left:14px;width:37px;height:24px;border-radius:55% 50% 25% 20%;
+ background:#314054}
+.face{position:absolute;z-index:4;top:10px;left:17px;width:32px;height:37px;border-radius:39% 39% 45% 45%;background:#deb48c}
+.eye{position:absolute;top:15px;height:3px;width:3px;border-radius:50%;background:#263346}
+.eye.one{left:8px}.eye.two{right:8px}
+.body{position:absolute;z-index:3;left:5px;top:45px;width:55px;height:51px;border-radius:21px 21px 4px 4px;background:var(--shirt)}
+.body:after{content:"";position:absolute;left:22px;top:0;width:9px;height:21px;border-radius:0 0 10px 10px;background:#13243c55}
+.arm{position:absolute;z-index:5;width:12px;height:36px;top:52px;border-radius:12px;background:#deae87}
+.arm.left{left:0;transform:rotate(-26deg)}.arm.right{right:0;transform:rotate(26deg)}
+.station.is-active .arm.left{animation:key1 .65s ease-in-out infinite alternate}
+.station.is-active .arm.right{animation:key2 .7s ease-in-out infinite alternate}
+@keyframes key1{to{transform:rotate(-35deg) translateY(3px)}}
+@keyframes key2{to{transform:rotate(35deg) translateY(3px)}}
+.monitor{position:absolute;right:8px;top:5px;width:108px;height:75px;border:8px solid #0c182a;
+ border-radius:9px;background:linear-gradient(140deg,#123d53,#12283d);box-shadow:2px 4px 10px #08111e}
+.monitor:after{content:"";position:absolute;left:42px;bottom:-24px;width:12px;height:17px;background:#0c182a}
+.mon-line{margin:6px;height:4px;border-radius:4px;background:#7cc8cd;opacity:.75}
+.mon-line.b{width:70%;background:#d1a2d6}.mon-line.c{width:50%;background:#89cbe3}
+.desk{position:absolute;bottom:4px;left:2px;right:2px;height:25px;border:2px solid #97745b;
+ border-radius:8px;background:linear-gradient(#bd9675,#84664e);z-index:6}
+.desk:before{content:"";position:absolute;top:-10px;left:50%;width:52px;height:8px;
+ background:#11243a;border-radius:5px;transform:translateX(-50%)}
+.desk:after{content:"";position:absolute;top:7px;right:12px;width:9px;height:9px;background:#d3d8df;border-radius:50%}
+.station.is-active .monitor{box-shadow:0 0 15px #66e5ce55}
+.agent-detail{z-index:2;position:relative;border-radius:11px;background:#101e2dcc;
+ border:1px solid #40566e;padding:10px;margin-top:8px}
+.task{font-size:.78rem;color:#dbe6f7;min-height:32px;line-height:1.35}
+.result{margin-top:7px;font-size:.72rem;color:#aabdd5}
+.bridge{grid-column:span 2;background:linear-gradient(140deg,#1b3746,#1c2b46);
+ border:1px solid #537087;border-radius:19px;padding:22px;display:flex;flex-direction:column;justify-content:center;gap:14px}
+.bridge .big{font-size:1.55rem;font-weight:760;letter-spacing:-.05em}
+.branch{border-top:1px solid #57718a;padding-top:12px;font-size:.82rem;color:#b9cee4}
+.bottom{margin-top:17px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.panel{background:var(--glass);border:1px solid var(--border);border-radius:18px;padding:19px}
+.panel p{font-size:.85rem;line-height:1.6}
+.row{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #39506a;padding:9px 0;font-size:.84rem}
+.tag{font-size:.75rem;border-radius:7px;background:#283d52;padding:5px 8px}
+.notice{font-size:.76rem;line-height:1.6;color:#b5c7de}
+@media(max-width:1100px){.floor{grid-template-columns:repeat(3,minmax(0,1fr))}.bridge{grid-column:span 2}}
+@media(max-width:750px){.floor{grid-template-columns:repeat(2,minmax(0,1fr))}.bottom{grid-template-columns:1fr}}
+@media(max-width:460px){.page{padding:16px 12px 40px}.scene{padding:10px}.floor{grid-template-columns:1fr}
+.station{min-height:252px}.bridge{grid-column:span 1}.hero{gap:14px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important}}
+</style></head><body><div class="page">
+<div class="topbar"><div class="brand">WEBULL PAPER <span class="muted">/ AI MISSION CONTROL</span></div>
+<nav class="links"><a href="/">Portfolio</a><a href="/office">Refresh office</a></nav></div>
+<div class="hero"><div><h1>The Agent Office</h1>
+<p class="intro muted">Seven specialist characters, one coordinated research desk.
+See their assigned stations and the latest verified decisions. Animated movement is illustrative;
+actual run state comes from GitHub Actions.</p></div>
+<div class="state {% if run and run.active %}active{% elif run and run.conclusion == 'success' %}ok{% elif run and run.conclusion == 'failure' %}fail{% endif %}">
+<span class="light"></span>
+{% if run and run.active %}DESK RUN IN PROGRESS
+{% elif run and run.queued %}RUN QUEUED
+{% elif run and run.conclusion == 'success' %}LAST RUN COMPLETED
+{% elif run and run.conclusion == 'failure' %}LAST RUN FAILED
+{% else %}LIVE RUN STATUS UNAVAILABLE{% endif %}
+</div></div>
+<section class="scene" aria-label="Virtual agent office">
+<div class="scene-heading"><strong>THE RESEARCH FLOOR</strong>
+<div class="legend">
+{% if run %}{{run.type}} · {{run.created}} UTC · <a href="{{run.run_url}}">See verified workflow →</a>
+{% else %}GitHub run details unavailable{% endif %}
+</div></div>
+<div class="floor">
+{% for role in workers %}
+<div class="station {% if run and run.active %}is-active{% endif %}" style="--shirt:{{role.color}}">
+<div class="station-title"><div><div class="agent-name">{{role.name}}</div>
+<div class="agent-role">{{role.title}}</div></div>
+<div class="activity {% if run and run.active %}lit{% endif %}">
+{% if run and run.active %}DESK ACTIVE{% elif role.vote %}REPORTED{% else %}AWAITING DATA{% endif %}</div></div>
+<div class="office-art" aria-hidden="true">
+<div class="person"><div class="hair"></div>
+<div class="face"><span class="eye one"></span><span class="eye two"></span></div>
+<div class="body"></div><span class="arm left"></span><span class="arm right"></span></div>
+<div class="monitor"><div class="mon-line"></div><div class="mon-line b"></div>
+<div class="mon-line c"></div><div class="mon-line"></div></div><div class="desk"></div></div>
+<div class="agent-detail"><div class="task">{{role.task}}</div>
+<div class="result">
+{% if role.vote %}Last published: <strong>{{role.vote.action}} {{role.vote.symbol}}</strong>
+· {{role.vote.confidence}} confidence
+{% else %}No published opinion yet{% endif %}
+</div></div></div>
+{% endfor %}
+<div class="bridge">
+<div class="tag">DECISION HUB</div>
+<div class="big">{% if agent %}{{agent.consensus}}{% else %}AWAITING REPORT{% endif %}</div>
+<p class="muted">{% if agent %}Latest dataset {{agent.as_of}} · {{agent.provider}}
+{% if agent.stale %}· STALE{% endif %}{% else %}No verified research report found.{% endif %}</p>
+<div class="branch">Morning PAPER orders still require the independent ORB scanner,
+sandbox validation and agent risk-on approval. The avatars themselves never place orders.</div>
+</div>
+</div></section>
+<div class="bottom">
+<section class="panel"><h2>Desk Activity</h2>
+{% if run %}<div class="row"><span>GitHub Actions</span><strong>{{run.state}}{% if run.conclusion %} · {{run.conclusion}}{% endif %}</strong></div>
+<div class="row"><span>Started / created</span><span>{{run.created}} UTC</span></div>
+{% else %}<p class="muted">Could not retrieve GitHub Actions run state.</p>{% endif %}
+<div class="row"><span>Agent progress</span><span>Per-agent live step not available</span></div>
+<div class="row"><span>Last published agent report</span><span>{% if agent %}{{agent.as_of}}{% else %}Unavailable{% endif %}</span></div>
+<p class="notice">Seven research roles are called sequentially. Their specific live stage is
+not published, so characters are not claimed to be executing individual tasks in real time.
+{% if run and (run.active or run.queued) %}This page updates every 30 seconds while the run is active or queued.{% endif %}</p>
+</section>
+<section class="panel"><h2>Paper Orders &amp; Performance</h2>
+{% if agent %}
+<div class="row"><span>Independent virtual equity</span><strong>{{agent.virtual_equity}}</strong></div>
+<div class="row"><span>Virtual simulated return</span><strong>{{agent.virtual_return}}</strong></div>
+<div class="row"><span>Virtual observed drawdown</span><strong>{{agent.virtual_drawdown}}</strong></div>
+<div class="row"><span>Latest research decision</span><strong>{{agent.decision}}</strong></div>
+{% else %}<p class="muted">No verified virtual-paper results available.</p>{% endif %}
+<p class="notice">These values describe a separate $10,000 hypothetical ledger.
+Actual Webull OpenAPI sandbox holdings and recent broker orders remain on the <a href="/">Portfolio</a> page.</p>
+</section></div>
+</div></body></html>
+"""
+
+
+def build_office_workers(agent):
+    """Join exact seven known roles to last published sanitized opinions."""
+    opinions = {
+        x["role"]: x for x in agent["agents"]
+    } if agent and isinstance(agent.get("agents"), list) else {}
+    return [
+        {"title": title, "name": name, "task": task, "detail": detail,
+         "color": color, "tag": tag, "vote": opinions.get(title)}
+        for title, name, task, detail, color, tag in OFFICE_ROLES
+    ]
+
+
+@app.get("/office")
+def office():
+    authorized_user()
+    try:
+        agent = read_agent_feed()
+    except Exception as error:
+        app.logger.warning(
+            "office_agent_feed_unavailable exception_type=%s", type(error).__name__)
+        agent = None
+    try:
+        run = read_office_run()
+    except Exception as error:
+        app.logger.warning(
+            "office_action_status_unavailable exception_type=%s", type(error).__name__)
+        run = None
+    response = make_response(render_template_string(
+        OFFICE_TEMPLATE, workers=build_office_workers(agent), agent=agent, run=run))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+    return response
+
+
+
 TEMPLATE = """
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -384,7 +649,7 @@ th{color:#bdcbe0;font-weight:500}td{font-variant-numeric:tabular-nums}
 .btn{border:1px solid #566d8c;border-radius:8px;padding:9px 12px;white-space:nowrap}
 </style></head><body>
 <header><div><small>WEBULL OPENAPI SANDBOX ONLY</small><h1>Paper Portfolio</h1></div>
-<a class="btn" href="/">Refresh</a></header>
+<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a class="btn" href="/office">Agent Office →</a><a class="btn" href="/">Refresh</a></div></header>
 <p class="muted">Read-only · {{ snapshot.as_of }} · {{ snapshot.source }}</p>
 <div class="stats"><section class="box"><small>Total account equity</small>
 <div class="number">{{ snapshot.equity }}</div></section>
