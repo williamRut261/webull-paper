@@ -191,6 +191,22 @@
       c.drawImage(im,id*16,row*32,16,32,flip?0:x,y,44,88);
     }else fallbackCharacter(c,a,flip?0:x,y);
     c.restore();
+    // Short speech appears ONLY for a recently published model message,
+    // never from idle animation or fabricated status.
+    if(a.speech && a.speechUntil > Date.now()){
+      const x0=Math.max(4,Math.min(W-244,x-28));
+      const yy=Math.max(148,y-76);
+      rect(c,x0,yy,240,48,"#0b2030");
+      stroke(c,x0,yy,240,48,"#72e1bd",2);
+      const words=a.speech.split(/\\s+/).filter(Boolean);
+      const lines=["",""];
+      for(const word of words){
+        const index=lines[0].length+word.length<36?0:1;
+        if(lines[index].length+word.length<36)lines[index]+=(lines[index]?" ":"")+word;
+      }
+      text(c,lines[0],x0+7,yy+8,"#d7ffe9","bold 11px monospace");
+      text(c,lines[1],x0+7,yy+25,"#b5ddcd","bold 10px monospace");
+    }
     if(index===selected){
       c.strokeStyle="#c5ffe7";c.lineWidth=3;c.strokeRect(x-5,y-5,54,97);
       rect(c,x+1,y+88,41,4,"#9ff5cc");
@@ -310,6 +326,63 @@
     statusTimer = window.setTimeout(() => { statusTimer = null; void updateStatus(); },
       Math.max(20, Math.min(600, seconds)) * 1000);
   }
+  // A GitHub-persisted transcript is the source of truth for dialogue.
+  const conversationFeed=document.getElementById("conversation-feed");
+  const conversationStatus=document.getElementById("conversation-status");
+  let latestSeenTurn=0;
+  function applyConversation(doc) {
+    if(!conversationFeed || !conversationStatus)return;
+    if(!doc || !doc.available || !Array.isArray(doc.messages) ||
+        !Number.isInteger(doc.last_turn) ||
+        !doc.messages.every(m=>m && typeof m.text==="string" &&
+          m.text.length>=10 && m.text.length<=300 &&
+          agents.some(a=>a.role===m.role) &&
+          Number.isInteger(m.turn) && m.turn>=0)) {
+      conversationStatus.textContent="Conversation feed unavailable";
+      conversationFeed.replaceChildren();
+      return;
+    }
+    const seen=new Set();
+    const latest=doc.messages.slice(-10);
+    const nodes=[];
+    for(const m of latest) {
+      if(seen.has(m.turn))continue;
+      seen.add(m.turn);
+      const speaker=agents.find(a=>a.role===m.role);
+      const li=document.createElement("li");
+      li.className="dialogue-entry";
+      const avatar=document.createElement("span");
+      avatar.className="avatar";
+      avatar.textContent=speaker.name.charAt(0);
+      avatar.style.background=speaker.color;
+      const area=document.createElement("div");
+      area.className="content";
+      const title=document.createElement("strong");
+      title.textContent=speaker.name+" · "+m.role;
+      const body=document.createElement("p");
+      body.textContent=m.text; // Never parse model output as HTML.
+      const caption=document.createElement("small");
+      caption.textContent=String(m.at).slice(0,19).replace("T"," ")+" UTC · turn "+m.turn;
+      area.append(title,body,caption);
+      li.append(avatar,area);
+      nodes.push(li);
+    }
+    conversationFeed.replaceChildren(...nodes);
+    conversationStatus.textContent=latest.length?
+      "VERIFIED PUBLISHED DIALOGUE · LAST TURN "+doc.last_turn :
+      "No real autonomous conversation yet";
+    // Only a genuinely new and recently published reply generates a bubble.
+    if(doc.last_turn>latestSeenTurn){
+      const mostRecent=latest[latest.length-1];
+      const at=mostRecent && Date.parse(mostRecent.at);
+      if(mostRecent && Number.isFinite(at) && Date.now()-at>=0 &&
+         Date.now()-at<12*60*1000 && latestSeenTurn>0){
+        const agent=agents.find(a=>a.role===mostRecent.role);
+        if(agent){agent.speech=mostRecent.text;agent.speechUntil=Date.now()+12000;}
+      }
+      latestSeenTurn=doc.last_turn;
+    }
+  }
   function markUnverified() {
     for (let i = 0; i < agents.length; i++) {
       agents[i].stage = "UNAVAILABLE";
@@ -340,6 +413,7 @@
         !payload.roles.every((r, i) => r && r.role === agents[i].role)) {
       throw new Error("Invalid live status shape");
     }
+    applyConversation(payload.conversation);
     if (payload.source === "UNAVAILABLE") {
       markUnverified();
       return 75;
