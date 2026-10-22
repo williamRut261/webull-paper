@@ -1,6 +1,7 @@
 """Offline tests for visual 7-agent office, strict source grounding and IAP."""
 import json
 import os
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -114,11 +115,33 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b"Market Analyst", response.data)
                     self.assertIn(b"Trade Reviewer", response.data)
                     self.assertIn(b"DESK RUN IN PROGRESS", response.data)
-                    self.assertIn(b"Per-agent live step not available", response.data)
+                    self.assertIn(b"Individual role progress is not exposed", response.data)
+                    self.assertEqual(response.data.count(b'class="pod '), 7)
+                    self.assertIn(b'id="motion"', response.data)
+                    self.assertIn(b"prefers-reduced-motion", response.data)
+                    self.assertIn(b"robot", response.data)
+                    self.assertIn(b"<details", response.data)
+                    self.assertNotIn(b"<script", response.data)
                     self.assertIn(b"HOLD SPY", response.data)
                     self.assertIn(b"content=\"30\"", response.data)
                     self.assertEqual(response.headers.get("Cache-Control"), "private, no-store")
                     self.assertIn("default-src 'none'", response.headers.get("Content-Security-Policy"))
+
+    def test_animation_is_bundled_and_does_not_load_third_party_assets(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "dashboard/templates/office.html").read_text()
+        self.assertIn("@keyframes roam", source)
+        self.assertIn("@keyframes scan", source)
+        self.assertIn("@keyframes type-a", source)
+        self.assertIn("prefers-reduced-motion", source)
+        self.assertIn("body:has(#motion:not(:checked))", source)
+        self.assertNotIn("https://", source)
+        self.assertNotIn("<script", source)
+        self.assertIn('aria-label="Animated virtual research office"', source)
+        self.assertIn("not exposed", source.lower())
+        docker = (Path(__file__).resolve().parents[1] /
+                  "dashboard/Dockerfile").read_text()
+        self.assertIn("COPY templates/ /app/templates/", docker)
 
     def test_missing_report_stays_unavailable_not_fake_lively_personnel(self):
         audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
