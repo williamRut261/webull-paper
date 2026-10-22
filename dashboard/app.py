@@ -386,10 +386,13 @@ OFFICE_RUNS_APIS = (
     "actions/workflows/ai-trading-desk.yml/runs?branch=main&per_page=1",
     "https://api.github.com/repos/williamRut261/webull-paper/"
     "actions/workflows/ai-desk-verify.yml/runs?branch=main&per_page=1",
+    "https://api.github.com/repos/williamRut261/webull-paper/"
+    "actions/workflows/office-autonomous-dialogue.yml/runs?branch=main&per_page=1",
 )
 OFFICE_WORKFLOW_NAMES = frozenset((
     "AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)",
     "One-Time Seven-Agent Provider Verification (NO BROKER)",
+    "Autonomous Seven-Agent Office (RESEARCH ONLY - NO BROKER)",
 ))
 
 
@@ -454,7 +457,9 @@ def read_office_run(opener=urlopen):
         ),
         "created": created[:20],
         "type": ("Scheduled AI desk" if latest.get("name", "").startswith("AI Trading")
-                 else "Provider verification"),
+                 else ("Autonomous research conversation"
+                       if latest.get("name", "").startswith("Autonomous Seven-Agent")
+                       else "Provider verification")),
     }
 
 
@@ -566,10 +571,56 @@ def office_sprite(name):
 
 
 
-# One-instance cache bounds unauthenticated GitHub API consumption. Public
-# GitHub REST normally allows only 60 requests/hour per source IP. At idle,
-# two workflow requests are made no more than once every four minutes;
-# while a run is active, role Checks add one more request about every 100s.
+
+# Only public, deliberately sanitized research dialogue is downloaded.
+# Cloud Run never runs the LLM or any task engine.
+OFFICE_CONVERSATION_FEED = (
+    "https://raw.githubusercontent.com/williamRut261/webull-paper/"
+    "main/research/office_conversation.json"
+)
+
+
+def read_office_conversation(opener=urlopen):
+    """Read at most twelve real completed, persistent agent messages."""
+    req = UrlRequest(OFFICE_CONVERSATION_FEED,
+                     headers={"User-Agent": "stonks-office-readonly"})
+    with opener(req, timeout=3) as response:
+        raw = response.read(35001)
+    if len(raw) > 35000:
+        raise ValueError("Oversized autonomous conversation feed")
+    data = json.loads(raw)
+    if (not isinstance(data, dict) or data.get("schema") != 1
+            or not isinstance(data.get("messages"), list)
+            or type(data.get("turn_seq")) is not int):
+        raise ValueError("Malformed office conversation")
+    people = {role: name for role, name, *_ in OFFICE_ROLES}
+    entries = []
+    for row in data["messages"][-12:]:
+        if not isinstance(row, dict):
+            raise ValueError("Malformed conversation entry")
+        role = row.get("role")
+        body = row.get("text")
+        when = row.get("at")
+        seq = row.get("turn")
+        if (role not in people or not isinstance(body, str)
+                or not 10 <= len(body) <= 300
+                or not isinstance(when, str)
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00", when)
+                or type(seq) is not int or seq < 0):
+            raise ValueError("Untrusted conversation entry")
+        entries.append({"role": role, "name": people[role],
+                        "text": body, "at": when, "turn": seq})
+    if any(a["turn"] >= b["turn"] for a, b in zip(entries, entries[1:])):
+        raise ValueError("Conversation has non-increasing turns")
+    return {"available": True, "messages": entries,
+            "last_turn": entries[-1]["turn"] if entries else 0,
+            "updated_at": entries[-1]["at"] if entries else None,
+            "kind": "HOURLY_BUDGETED_RESEARCH_DIALOGUE"}
+
+
+# One-instance cache bounds GitHub REST consumption. At idle,
+# three workflow requests are made no more than once every four minutes;
+# while a run is active, Check reads add a request about every 100s.
 # The UI therefore reports *polled* activity, never sub-second streaming.
 _office_status_lock = threading.Lock()
 _office_status_cache = {"expires": 0.0, "payload": None}
@@ -609,6 +660,13 @@ def read_office_status_snapshot():
         except Exception as error:
             app.logger.warning("office_live_opinions_unavailable exception_type=%s",
                                type(error).__name__)
+        try:
+            conversation = read_office_conversation()
+        except Exception as error:
+            app.logger.warning("office_conversation_unavailable exception_type=%s",
+                               type(error).__name__)
+            conversation = {"available": False, "messages": [], "last_turn": 0,
+                            "updated_at": None}
         rows = build_office_workers(agent, statuses)
         roles = [
             {"role": row["title"], "stage": row["stage"] or "UNAVAILABLE",
@@ -627,7 +685,7 @@ def read_office_status_snapshot():
             ttl = 75
         payload = {
             "source": source, "checked_at": checked_at,
-            "refresh_after_seconds": ttl,
+            "refresh_after_seconds": ttl, "conversation": conversation,
             "run": {
                 "state": run["state"], "conclusion": run["conclusion"],
                 "active": run["active"], "queued": run["queued"],
