@@ -206,7 +206,7 @@ background:linear-gradient(#c39d74 0 60%,#8d6b61 60%);z-index:5;box-shadow:0 3px
        <p>{{worker.task}}. {{worker.detail}}.</p>
        {% if worker.vote %}
        <p>Last published: <strong>{{worker.vote.action}} {{worker.vote.symbol}}</strong> at {{worker.vote.confidence}} stated confidence.</p>
-       {% else %}<p>No validated specialist opinion has been published yet.</p>{% endif %}
+       {% else %}<p>No published opinion yet — awaiting validated data.</p>{% endif %}
        <small>Illustrated character movement does not establish a live per-agent action. Actual workflow state is shown above.</small>
      </div>
    </details>
