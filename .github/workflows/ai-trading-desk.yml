@@ -2,6 +2,12 @@ name: AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)
 on:
   workflow_dispatch:
     inputs:
+      provider:
+        type: choice
+        description: Research provider; compare calls EVERY configured API and may incur charges
+        required: true
+        default: gemini
+        options: [gemini, openai, claude, grok, compare]
       focus_symbol:
         type: choice
         description: Symbol to include in seven-agent research
@@ -25,7 +31,14 @@ jobs:
     timeout-minutes: 18
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      AI_DESK_MODEL: ${{ vars.AI_DESK_MODEL || 'gpt-5-mini' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      AI_DESK_PROVIDER: ${{ github.event_name == 'schedule' && 'gemini' || inputs.provider || 'gemini' }}
+      AI_DESK_GEMINI_MODEL: ${{ vars.AI_DESK_GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      AI_DESK_OPENAI_MODEL: ${{ vars.AI_DESK_OPENAI_MODEL || 'gpt-5-mini' }}
+      AI_DESK_CLAUDE_MODEL: ${{ vars.AI_DESK_CLAUDE_MODEL || 'claude-haiku-4-5' }}
+      AI_DESK_GROK_MODEL: ${{ vars.AI_DESK_GROK_MODEL || 'grok-4.7' }}
       AI_DESK_FOCUS: ${{ inputs.focus_symbol || 'GDXD' }}
       PYTHONPATH: .
     steps:
@@ -33,12 +46,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install OpenAI Agents SDK
-        run: python -m pip install 'openai-agents>=0.2,<1'
       - name: Run seven research specialists (NO BROKER CONNECTION)
         run: |
           set -o pipefail
-          python -m research.ai_desk --symbol "$AI_DESK_FOCUS" --out out/ai-desk
+          python -m research.ai_desk --provider "$AI_DESK_PROVIDER" --symbol "$AI_DESK_FOCUS" --out out/ai-desk
       - name: Write summary
         if: always()
         run: |
