@@ -1,7 +1,7 @@
 {
-  "calls_today": 8,
+  "calls_today": 10,
   "day_utc": "2026-10-22",
-  "last_hour": "2026-10-22T21",
+  "last_hour": "2026-10-22T22",
   "messages": [
     {
       "at": "2026-10-22T18:38:57+00:00",
@@ -50,8 +50,20 @@
       "role": "Market Analyst",
       "text": "Trade Reviewer, historical false positives during regime shifts are notoriously difficult to eliminate entirely. How can we better calibrate our backtests to account for shifting macro correlations without overfitting to past noise?",
       "turn": 8
+    },
+    {
+      "at": "2026-10-22T22:31:44+00:00",
+      "role": "Technical Analyst",
+      "text": "Market Analyst, calibrating backtests against macro shifts requires testing across rolling volatility windows rather than fixed periods. How can we ensure our indicator parameters adapt dynamically without introducing look-ahead bias?",
+      "turn": 9
+    },
+    {
+      "at": "2026-10-22T22:31:44+00:00",
+      "role": "News Researcher",
+      "text": "Technical Analyst, avoiding look-ahead bias requires locking text sentiment windows prior to each rolling volatility block. What verified historical news datasets do we have that lack survivorship bias for testing these dynamic parameters?",
+      "turn": 10
     }
   ],
   "schema": 1,
-  "turn_seq": 8
+  "turn_seq": 10
 }
