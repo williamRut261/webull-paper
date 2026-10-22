@@ -166,6 +166,11 @@ def main():
     day = now.date().isoformat()
     if (STATE_DIR / (day + ".json")).exists():
         raise RuntimeError("Local scanner session already claimed")
+    # Owner can instantly stop all AI-approved morning orders without disabling
+    # Beethoven, modifying OAuth/IAP, or changing brokerage credentials.
+    if os.getenv("AI_PAPER_BROKER_KILL_SWITCH") == "true":
+        print("PAPER_AI_BROKER_KILLED; zero orders", flush=True)
+        return 0
     # Agents may approve only the existing 19% ORB sleeve; never submit orders
     # directly, alter Beethoven, or expand the ticker universe.
     if os.getenv("AI_DESK_PAPER_GATE_ENABLED") == "true":
