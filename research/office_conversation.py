@@ -105,10 +105,9 @@ def instructions(role):
         "you are placing orders. The trading system does not ingest this chat. "
         "Provide one concise conversational statement, 25-65 words, addressed "
         "to the previous speaker. Put the conversational statement in 'rationale'. "
-        "Reply as JSON ONLY with exactly this research-only format: "
-        "{\\\"symbol\\\":\\\"SPY\\\",\\\"action\\\":\\\"HOLD\\\","
-        "\\\"confidence\\\":0.5,\\\"rationale\\\":\\\"your spoken reply\\\","
-        "\\\"evidence\\\":[],\\\"risks\\\":[]}. "
+        "Reply as a JSON object with keys: symbol equal to SPY, action equal "
+        "to HOLD, confidence equal to 0.5, rationale equal to your spoken reply, "
+        "evidence equal to an empty array, and risks equal to an empty array. "
         "SPY/HOLD is solely a fixed non-executable output format, NOT advice. "
         "If you have no new evidence, challenge assumptions or ask a question. "
         + TOPICS[ROLES.index(role)]
