@@ -1,50 +1,79 @@
-# AI Trading Desk — Seven-agent, read-only research
+# Provider-independent AI Trading Desk (research only)
 
-This OpenAI Agents SDK prototype imitates a trading-floor discussion:
-Market Analyst, Technical Analyst, News Researcher, Strategy Analyst,
-Risk Manager, Desk Lead, and independent Trade Reviewer. Each specialist
-reads a single validated daily-market snapshot and earlier opinions.
-No literal ChatGPT group chat exists; GitHub coordinates the agents.
+This seven-specialist research system runs through GitHub Actions, **not a
+literal group chat**. It now uses a fixed-endpoint provider adapter instead
+of requiring the OpenAI Agents SDK. Supported model providers:
 
-The deterministic opinion gate needs at least three of the first four
-analysts to agree, and both the risk manager and desk lead to agree.
-Even unanimous agreement is ONLY a hypothesis for backtesting. No orders
-are possible: this project has no broker SDK or broker credentials.
+| Workflow selection | Actions secret | Default model | Cost |
+| --- | --- | --- | --- |
+| gemini (default) | GEMINI_API_KEY | gemini-3.5-flash-lite | May qualify for Google's limited free tier |
+| openai | OPENAI_API_KEY | gpt-5-mini | API billed separately from ChatGPT |
+| claude | ANTHROPIC_API_KEY | claude-haiku-4-5 | API billing applies |
+| grok | XAI_API_KEY | grok-4.7 | API billing applies |
+| compare | All configured secrets | Each provider's default | May make up to 28 billable requests |
 
-## Open the deployed workflow and results
+Each full run has **seven** sequential specialist calls: Market Analyst,
+Technical Analyst, News Researcher, Strategy Analyst, Risk Manager,
+Desk Lead, independent Trade Reviewer. Later agents read earlier
+opinions. The logic requires at least three of four analysts plus
+risk-manager and desk-lead agreement for a **hypothesis for backtesting**.
+That is not a trading instruction and does not demonstrate profit.
 
-1. Navigate to the repository Actions tab.
-2. Select AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS).
-3. Choose Run workflow, then your focus ticker.
-4. Open its Summary to read each agent's opinion.
-5. Download the ai-desk-research artifact for JSON details and data provenance.
+## Usage
 
-## One-time setup (required for actual AI responses)
+1. Visit GitHub repository Settings > Secrets and variables > Actions.
+2. Add a secret for the provider you actually want. To start with a
+   potentially free provider, visit https://aistudio.google.com/apikey
+   and create GEMINI_API_KEY. **Never paste it in chat or source files.**
+3. Open Actions > AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS) >
+   Run workflow. Select provider (gemini, openai, claude, grok, compare)
+   and focus symbol (default GDXD).
+4. Open the run Summary or download its ai-desk-research artifact for
+   the JSON evidence, separate specialist opinions and token usage.
+5. For recurring Gemini-only research, add GitHub Actions repository
+   variable AI_DESK_ENABLED with value true. The scheduled job is
+   disabled until you do so. Scheduled runs always use Gemini, not
+   paid Claude/Grok/OpenAI or compare mode.
+6. Optionally set repository variables AI_DESK_GEMINI_MODEL,
+   AI_DESK_OPENAI_MODEL, AI_DESK_CLAUDE_MODEL, AI_DESK_GROK_MODEL to
+   override model IDs. These are provider-specific and never change
+   the endpoint host. Confirm the chosen model exists and your account
+   can access it.
 
-Create an Actions secret named OPENAI_API_KEY. Use your own OpenAI API
-key, never a Webull secret. OpenAI API billing is separate from ChatGPT.
-Do not paste any API key into chat.
+**Billing note:** Model provider free quotas and availability can change,
+and free-tier Gemini input may be used by Google to improve products.
+A Gemini API key associated with a billed Google project may produce
+charges. The workflow does not guarantee a $0 bill. Manual compare mode
+explicitly makes provider calls for every configured credential and may
+incur charges; its cost is not enforced in code. Keep billing budgets
+and limits at each provider. If a key is missing, the job reports
+NOT_CONFIGURED rather than silently switching to a paid provider.
 
-To explicitly enable after-close weekday research, create repository
-variable AI_DESK_ENABLED=true. Recurring calls incur API charges, so
-the scheduled job is disabled until this variable is set.
-Optional AI_DESK_MODEL defaults to gpt-5-mini.
+The market snapshot uses unofficial Yahoo historical daily closes,
+not official exchange live quotes. It refuses missing/stale inputs and
+does not claim to have verified news (no news feed is connected).
+Research comparisons use identical price snapshots for every model,
+but past or forward trade performance is not tested. This is not a
+proof of AI model superiority or a portfolio management recommendation.
 
-The market feed is unofficial Yahoo historical DAILY bars. Incomplete
-or stale bars cause a visible failure, not a guessed signal. No news
-feed is connected; the news agent must state this. Quotes are not
-suitable for order execution, and GitHub schedules are best-effort.
+**Security:** Fixed HTTPS provider endpoints, bounded response sizes,
+basic JSON output checks, read-only GitHub permissions, no Webull or
+Alpaca keys in workflow, and no broker/order imports in the desk.
+No buy/sell order can be sent by this workflow. Never trust model
+opinions as executable signals.
 
-## Test
+## Offline regression/smoke
 
-    python -m unittest discover -s tests -p test_ai_desk.py -v
+    python -m unittest discover -s tests -v
     python -m research.ai_desk --smoke --out /tmp/desk-smoke
 
-## Not included or activated
+The smoke test never contacts a model, market-data service or broker.
 
-No five-strategy capital allocation, five-way Webull executor, trade
-orders, account P&L attribution, autonomous intraday trading or tested
-returns. Webull PAPER stays on the current 80/19 setup. PR #4 (4x25)
-remains separate. Alpaca LIVE and Webull LIVE are untouched.
-Integrating five sleeves requires a distinct safe cutover after
-portfolio and data validation, loss controls, and paper-fill tests.
+## Not activated
+
+Webull PAPER remains Beethoven 80% / ORB 19% / ~1% cash. Separate draft
+PR #4 remains a non-executing 4x25 research prototype. No five-way
+allocation, per-sleeve real performance ledger, intraday Grok execution,
+or live broker integration is implemented. Alpaca LIVE and Webull LIVE
+are unchanged. Any trading cutover requires independent verification
+and separate controls; it is explicitly out of scope here.
