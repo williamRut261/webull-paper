@@ -12,7 +12,7 @@ from research.ai_desk import ROLES
 from research.agent_sandbox_executor import (
     ALLOWED, MAX_POSITION_FRACTION, approved_ticket, build_payload,
     check_dedicated_account, claim_day, execute_one, load_report,
-    session_guard, verify_order_book,
+    session_guard, verify_order_book, build_sell_payload,
 )
 from webull_paper.signal_dry_run import NY
 from webull_paper.paper_orders import SnapshotPrices
@@ -61,6 +61,18 @@ class AgentsSandboxTests(unittest.TestCase):
         x["agents"][2]["action"]="NO_TRADE"
         x["agents"][3]["action"]="NO_TRADE"
         self.assertFalse(approved_ticket(x,self.NOW.date())["approved"])
+
+    def test_seven_agent_sell_can_only_liquidate_own_existing_position(self):
+        x=report()
+        x["hypothesis"]["action"]="SELL"
+        for row in x["agents"]:
+            row["action"]="SELL"
+        self.assertEqual(approved_ticket(x,self.NOW.date())["side"],"SELL")
+        x["agents"][6]["action"]="HOLD"
+        self.assertFalse(approved_ticket(x,self.NOW.date())["approved"])
+        self.assertEqual(build_sell_payload("SPY",.25,"2026-10-22")["quantity"],"0.250000")
+        with self.assertRaises(RuntimeError):
+            build_sell_payload("SPY",1.5,"2026-10-22")
 
     def test_fails_on_stale_or_missing_research(self):
         for d in ("2026-10-22","2026-10-23","2026-10-16"):
@@ -159,6 +171,31 @@ class AgentsSandboxTests(unittest.TestCase):
                             {"symbol":"SPY"},self.NOW,dry_run=False,
                             clock=lambda:self.NOW,submit=submit)
         self.assertEqual(len(submitted),1)
+
+    def test_selling_reconciles_existing_position_but_never_short(self):
+        broker=Broker()
+        quotes=SnapshotPrices()
+        quotes["SPY"]=600.
+        quotes.trade_times["SPY"]=self.NOW
+        holdings={"SPY":{"qty":.25,"price":600.,"value":150.}}
+        ticket={"symbol":"SPY","side":"SELL"}
+        with patch("research.agent_sandbox_executor.collect_snapshots",
+                   return_value=(quotes,{})), \
+             patch("research.agent_sandbox_executor.checked_portfolio",
+                   return_value=(5000.,4000.,holdings)):
+            plan=execute_one(broker,object(),"isolated-agents",ticket,
+                             self.NOW,dry_run=True,clock=lambda:self.NOW)
+            self.assertEqual(plan["side"],"SELL")
+            self.assertEqual(plan["quantity"],"0.250000")
+            none=execute_one(broker,object(),"isolated-agents",
+                             {"symbol":"QQQ","side":"SELL"},self.NOW,
+                             dry_run=True,clock=lambda:self.NOW)
+            self.assertEqual(none["orders"],0)
+        with patch("research.agent_sandbox_executor.checked_portfolio",
+                   return_value=(5000.,4000.,{})):
+            flat=execute_one(broker,object(),"isolated-agents",ticket,
+                             self.NOW,dry_run=True,clock=lambda:self.NOW)
+            self.assertEqual(flat["status"],"NO_POSITION_TO_SELL")
 
     def test_broker_host_pinned_and_auto_execution_default_disabled(self):
         source=(Path(__file__).resolve().parents[1]/
