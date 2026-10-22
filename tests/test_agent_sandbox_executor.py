@@ -70,9 +70,11 @@ class AgentsSandboxTests(unittest.TestCase):
         self.assertEqual(approved_ticket(x,self.NOW.date())["side"],"SELL")
         x["agents"][6]["action"]="HOLD"
         self.assertFalse(approved_ticket(x,self.NOW.date())["approved"])
-        self.assertEqual(build_sell_payload("SPY",.25,"2026-10-22")["quantity"],"0.250000")
+        self.assertEqual(build_sell_payload("SPY",.25,"2026-10-22")["quantity"],"0.25000")
         with self.assertRaises(RuntimeError):
             build_sell_payload("SPY",1.5,"2026-10-22")
+        with self.assertRaises(RuntimeError):
+            build_sell_payload("SPY",0.123456,"2026-10-22")
 
     def test_fails_on_stale_or_missing_research(self):
         for d in ("2026-10-22","2026-10-23","2026-10-16"):
@@ -106,6 +108,8 @@ class AgentsSandboxTests(unittest.TestCase):
         self.assertEqual(ticket["client_order_id"],"ag20261022BSPY")
         self.assertLessEqual(float(ticket["quantity"])*600,
                              5000*MAX_POSITION_FRACTION)
+        self.assertEqual(ticket["quantity"],"0.41666")
+        self.assertLessEqual(len(ticket["quantity"].split(".")[1]),5)
         self.assertGreaterEqual(float(ticket["quantity"])*600,5.)
         with self.assertRaises(RuntimeError):
             build_payload("GDXD",25.,5000.,5000.,"2026-10-22")
@@ -186,7 +190,7 @@ class AgentsSandboxTests(unittest.TestCase):
             plan=execute_one(broker,object(),"isolated-agents",ticket,
                              self.NOW,dry_run=True,clock=lambda:self.NOW)
             self.assertEqual(plan["side"],"SELL")
-            self.assertEqual(plan["quantity"],"0.250000")
+            self.assertEqual(plan["quantity"],"0.25000")
             none=execute_one(broker,object(),"isolated-agents",
                              {"symbol":"QQQ","side":"SELL"},self.NOW,
                              dry_run=True,clock=lambda:self.NOW)
