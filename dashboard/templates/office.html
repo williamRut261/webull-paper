@@ -154,6 +154,19 @@ background:linear-gradient(#c39d74 0 60%,#8d6b61 60%);z-index:5;box-shadow:0 3px
 @media(max-width:1140px){.layout{grid-template-columns:1fr}.sidebar{grid-template-columns:repeat(3,1fr)}.bottom-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.page{padding:14px 12px 36px}.header{margin:20px 0}.nav a{font-size:11px;padding:8px 9px}.sidebar{grid-template-columns:1fr}.bottom-grid{grid-template-columns:1fr}.room{min-width:1000px}.marquee{font-size:9px}.header p{font-size:12px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:0s!important;transition-duration:0s!important}}
+
+/* Characters cross the aisle and visit desks only as AMBIENT illustration.
+   Never use these sprites to infer actual Gemini agent execution. */
+.pod.is-wandering .person{visibility:hidden}
+.agent-walker{position:absolute;width:74px;height:101px;z-index:32;pointer-events:none;
+transition-property:left,top;transition-timing-function:linear;filter:drop-shadow(4px 5px 0 #071520a0)}
+.agent-walker .person{left:0;top:0;animation:none;transform:scale(.91);transform-origin:bottom left}
+.agent-walker.is-walking .limb.l{animation:step-leg .28s ease-in-out infinite alternate}
+.agent-walker.is-walking .limb.r{animation:step-leg .28s ease-in-out -.14s infinite alternate-reverse}
+@keyframes step-leg{from{transform:rotate(-24deg) translateY(0)}
+to{transform:rotate(23deg) translateY(5px)}}
+body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
+@media(prefers-reduced-motion:reduce){.agent-walker{transition:none!important}}
 </style>
 </head>
 <body><main class="page">
@@ -182,7 +195,7 @@ background:linear-gradient(#c39d74 0 60%,#8d6b61 60%);z-index:5;box-shadow:0 3px
  <span class="window-meta">{% if run and run.active %}● RESEARCH WORKFLOW ACTIVE{% else %}◌ AMBIENT MODE{% endif %} · CLICK DESKS TO INSPECT</span>
  </div>
  <div class="canvas-viewport" tabindex="0" aria-label="Pan right to view the whole illustrated office">
- <div class="room">
+ <div class="room" data-workflow-active="{{ 'true' if run and run.active else 'false' }}">
   <div class="skylight"></div><div class="skylight two"></div><div class="skylight three"></div>
   <div class="wall-sign">THE <span>ALPHA</span> DESK</div>
   <div class="deskboard"><div class="bars"><span></span><span></span><span></span><span></span></div><p>SCANNING · MARKET</p></div>
@@ -276,4 +289,4 @@ background:linear-gradient(#c39d74 0 60%,#8d6b61 60%);z-index:5;box-shadow:0 3px
  <p class="notice">Owner-only, read-only interface via existing Google IAP. No trading permissions added.</p>
  </div>
 </section>
-</main></body></html>
+</main><script src="/office/motion.js" defer></script></body></html>

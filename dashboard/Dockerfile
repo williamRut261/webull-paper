@@ -6,6 +6,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt && \
     useradd --system --create-home appuser
 COPY app.py /app/app.py
 COPY templates/ /app/templates/
+COPY static/ /app/static/
 USER appuser
 EXPOSE 8080
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "2", "--timeout", "60", "app:app"]

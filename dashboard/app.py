@@ -440,6 +440,17 @@ def build_office_workers(agent):
     ]
 
 
+@app.get("/office/motion.js")
+def office_motion():
+    """Serve read-only pixel-world animation after the same owner/IAP check."""
+    authorized_user()
+    response = make_response(app.send_static_file("office-motion.js"))
+    response.headers["Cache-Control"] = "private, max-age=60"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.get("/office")
 def office():
     authorized_user()
@@ -462,7 +473,7 @@ def office():
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+        "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
     return response
 
 
