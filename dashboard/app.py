@@ -526,7 +526,7 @@ def office():
         checks = {}
     response = make_response(render_template(
         "office.html", workers=build_office_workers(agent, checks),
-        agent=agent, run=run))
+        agent=agent, run=run, checks=checks))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
