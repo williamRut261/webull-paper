@@ -265,7 +265,7 @@ class AgentOfficeTests(unittest.TestCase):
                     for i in range(6):
                         response=client.get("/office/sprites/char_%d.png" % i, headers=headers)
                         self.assertEqual(response.status_code, 200)
-                        self.assertTrue(response.data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+                        self.assertTrue(response.data.startswith(b"\x89PNG\r\n\x1a\n"))
                     self.assertEqual(client.get("/office/sprites/char_9.png",headers=headers).status_code,404)
                     self.assertEqual(client.get("/office/sprites/not-a-sprite.png",headers=headers).status_code,404)
 
