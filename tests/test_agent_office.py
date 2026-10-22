@@ -171,7 +171,7 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertIsNone(read_office_run(
             opener=lambda req, timeout: Response(json.dumps(irrelevant).encode())))
 
-    def test_owner_only_visual_office_with_no_broker_endpoints(self):
+    def test_owner_only_game_world_renders_all_seven_real_roles(self):
         audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
         settings = {"IAP_AUDIENCE": audience, "DASHBOARD_ALLOWED_EMAIL": "owner@example.com"}
         with patch.dict(os.environ, settings, clear=True):
@@ -185,6 +185,8 @@ class AgentOfficeTests(unittest.TestCase):
                      "type": "Scheduled AI desk", "created": "2026-10-22T23:35:01",
                      "conclusion": "", "run_url":
                      "https://github.com/williamRut261/webull-paper/actions/runs/12345",
+                 }), patch("dashboard.app.read_office_role_checks", return_value={
+                     "Market Analyst": "WORKING", "Risk Manager": "DONE"
                  }):
                 with app.test_client() as c:
                     response = c.get("/office", headers={"X-Goog-Iap-Jwt-Assertion": "signed"})
@@ -193,63 +195,79 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b"Market Analyst", response.data)
                     self.assertIn(b"Trade Reviewer", response.data)
                     self.assertIn(b"DESK RUN IN PROGRESS", response.data)
-                    self.assertIn(b"Only an active, run-matched GitHub Check", response.data)
-                    self.assertEqual(response.data.count(b'class="pod '), 7)
-                    self.assertIn(b'id="motion"', response.data)
-                    self.assertIn(b"prefers-reduced-motion", response.data)
-                    self.assertIn(b"robot", response.data)
-                    self.assertIn(b"<details", response.data)
-                    self.assertIn(b'<script src="/office/motion.js" defer></script>', response.data)
-                    self.assertIn(b"HOLD SPY", response.data)
-                    self.assertIn(b"content=\"30\"", response.data)
+                    self.assertIn(b"character movement", response.data.lower())
+                    self.assertEqual(response.data.count(b'class="agent-btn'), 7)
+                    self.assertEqual(response.data.count(b'data-agent="'), 7)
+                    self.assertIn(b'id="office-world"', response.data)
+                    self.assertIn(b'id="motion-toggle"', response.data)
+                    self.assertIn(b'id="camera-follow"', response.data)
+                    self.assertIn(b'id="zoom-in"', response.data)
+                    self.assertIn(b'data-stage="WORKING"', response.data)
+                    self.assertIn(b'data-stage="DONE"', response.data)
+                    self.assertIn(b'data-action="HOLD"', response.data)
+                    self.assertIn(b'data-symbol="SPY"', response.data)
+                    self.assertIn(b'<script src="/office/world.js" defer></script>', response.data)
+                    self.assertIn(b'content="30"', response.data)
                     self.assertEqual(response.headers.get("Cache-Control"), "private, no-store")
                     self.assertIn("default-src 'none'", response.headers.get("Content-Security-Policy"))
+                    self.assertIn("img-src 'self'", response.headers.get("Content-Security-Policy"))
+                    self.assertNotIn(b'place_order(', response.data)
 
-    def test_animation_is_bundled_and_does_not_load_third_party_assets(self):
+    def test_canvas_office_includes_original_art_and_clear_provenance(self):
         source = (Path(__file__).resolve().parents[1] /
                   "dashboard/templates/office.html").read_text()
-        self.assertIn("@keyframes roam", source)
-        self.assertIn("@keyframes scan", source)
-        self.assertIn("@keyframes type-a", source)
         self.assertIn("prefers-reduced-motion", source)
-        self.assertIn("body:has(#motion:not(:checked))", source)
-        self.assertNotIn("https://", source)
-        self.assertIn('<script src="/office/motion.js" defer></script>', source)
+        self.assertIn('id="office-world"', source)
+        self.assertIn('id="agent-inspector"', source)
+        self.assertIn('id="world-viewport"', source)
+        self.assertIn('id="agent-roster"', source)
+        self.assertIn('data-stage="{{w.stage', source)
+        self.assertIn('data-action="{{w.vote.action', source)
+        self.assertIn('data-confidence="{{w.vote.confidence', source)
+        self.assertIn("movement and coffee breaks are decorative", source)
         self.assertEqual(source.count("<script"), 1)
-        self.assertIn("data-workflow-active", source)
-        self.assertIn("agent-walker", source)
-        self.assertIn("@keyframes step-leg", source)
-        self.assertIn('aria-label="Animated virtual research office"', source)
-        self.assertIn("missing events remain unavailable", source.lower())
+        self.assertIn('<script src="/office/world.js" defer></script>', source)
+        code = (Path(__file__).resolve().parents[1] /
+                "dashboard/static/office-world.js").read_text()
+        self.assertIn("window.requestAnimationFrame", code)
+        self.assertIn("canvas.getContext", code)
+        self.assertIn("im.naturalWidth", code)
+        self.assertIn("click", code)
+        self.assertIn("visibilitychange", code)
+        self.assertIn("prefers-reduced-motion", code)
+        self.assertIn("stage===\"WORKING\"", code)
+        self.assertIn("resetWalk()", code)
+        for forbidden in ("fetch(", "XMLHttpRequest", "axios", "WebSocket",
+                          "place_order", "create_order", "submit_order",
+                          "localStorage", "eval(", "new Function("):
+            self.assertNotIn(forbidden, code)
         docker = (Path(__file__).resolve().parents[1] /
                   "dashboard/Dockerfile").read_text()
         self.assertIn("COPY templates/ /app/templates/", docker)
         self.assertIn("COPY static/ /app/static/", docker)
 
-    def test_animated_walking_script_is_authenticated_and_broker_isolated(self):
-        code = (Path(__file__).resolve().parents[1] /
-                "dashboard/static/office-motion.js").read_text()
-        self.assertIn("agent-walker", code)
-        self.assertIn("is-wandering", code)
-        self.assertIn("visibilitychange", code)
-        self.assertIn("prefers-reduced-motion", code)
-        for forbidden in ("place_order", "fetch(", "XMLHttpRequest", "axios",
-                          "Webull", "create_order", "submit_order"):
-            self.assertNotIn(forbidden, code)
+    def test_sprites_and_world_script_are_iap_protected_and_allowlisted(self):
         audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
-        with patch.dict(os.environ, {"IAP_AUDIENCE": audience,
-                                     "DASHBOARD_ALLOWED_EMAIL": "owner@example.com"}, clear=True):
+        settings = {"IAP_AUDIENCE": audience, "DASHBOARD_ALLOWED_EMAIL": "owner@example.com"}
+        with patch.dict(os.environ, settings, clear=True):
             with app.test_client() as client:
-                self.assertEqual(client.get("/office/motion.js").status_code, 403)
+                self.assertEqual(client.get("/office/world.js").status_code, 403)
+                self.assertEqual(client.get("/office/sprites/char_0.png").status_code, 403)
             with patch("dashboard.app.id_token.verify_token", return_value={
                 "iss": "https://cloud.google.com/iap", "email": "owner@example.com"
             }):
                 with app.test_client() as client:
-                    response = client.get("/office/motion.js", headers={
-                        "X-Goog-Iap-Jwt-Assertion": "signed"})
-                    self.assertEqual(response.status_code, 200)
-                    self.assertIn(b"agent-walker", response.data)
-                    self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
+                    headers={"X-Goog-Iap-Jwt-Assertion": "signed"}
+                    script=client.get("/office/world.js", headers=headers)
+                    self.assertEqual(script.status_code, 200)
+                    self.assertIn(b"requestAnimationFrame",script.data)
+                    self.assertEqual(script.headers.get("X-Content-Type-Options"), "nosniff")
+                    for i in range(6):
+                        response=client.get("/office/sprites/char_%d.png" % i, headers=headers)
+                        self.assertEqual(response.status_code, 200)
+                        self.assertTrue(response.data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+                    self.assertEqual(client.get("/office/sprites/char_9.png",headers=headers).status_code,404)
+                    self.assertEqual(client.get("/office/sprites/not-a-sprite.png",headers=headers).status_code,404)
 
     def test_missing_report_stays_unavailable_not_fake_lively_personnel(self):
         audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
@@ -262,9 +280,10 @@ class AgentOfficeTests(unittest.TestCase):
                 with app.test_client() as c:
                     response = c.get("/office", headers={"X-Goog-Iap-Jwt-Assertion": "signed"})
                     self.assertEqual(response.status_code, 200)
-                    self.assertIn(b"No published opinion yet", response.data)
+                    self.assertIn(b"No validated seven-specialist report available.", response.data)
                     self.assertIn(b"LIVE RUN STATUS UNAVAILABLE", response.data)
                     self.assertNotIn(b"DESK RUN IN PROGRESS", response.data)
+                    self.assertEqual(response.data.count(b'data-stage="UNAVAILABLE"'), 7)
 
 
 if __name__ == "__main__":
