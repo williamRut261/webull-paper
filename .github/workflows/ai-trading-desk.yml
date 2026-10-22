@@ -1,0 +1,57 @@
+name: AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)
+on:
+  workflow_dispatch:
+    inputs:
+      focus_symbol:
+        type: choice
+        description: Symbol to include in seven-agent research
+        required: true
+        default: GDXD
+        options: [GDXD, GDXU, TQQQ, SPY, QQQ, GLD, TLT, BIL]
+  schedule:
+    - cron: "35 23 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-desk-research-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  research:
+    if: github.event_name == 'workflow_dispatch' || vars.AI_DESK_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      AI_DESK_MODEL: ${{ vars.AI_DESK_MODEL || 'gpt-5-mini' }}
+      AI_DESK_FOCUS: ${{ inputs.focus_symbol || 'GDXD' }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install OpenAI Agents SDK
+        run: python -m pip install 'openai-agents>=0.2,<1'
+      - name: Run seven research specialists (NO BROKER CONNECTION)
+        run: |
+          set -o pipefail
+          python -m research.ai_desk --symbol "$AI_DESK_FOCUS" --out out/ai-desk
+      - name: Write summary
+        if: always()
+        run: |
+          if test -f out/ai-desk/report.md; then
+            cat out/ai-desk/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report was produced; no brokerage actions occurred." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Save research JSON and agent opinions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-desk-research-${{ github.run_id }}
+          path: out/ai-desk/
+          if-no-files-found: warn
+          retention-days: 14
