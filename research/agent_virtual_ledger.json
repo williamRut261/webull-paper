@@ -1,9 +1,16 @@
 {
-  "schema": 1,
-  "cash": 10000,
+  "cash": 10000.0,
+  "daily": [
+    {
+      "day": "2026-10-21",
+      "drawdown_pct": 0.0,
+      "equity": 10000.0
+    }
+  ],
+  "last_day": "2026-10-21",
+  "peak_equity": 10000.0,
+  "pending": null,
   "positions": {},
-  "peak_equity": 10000,
-  "last_day": "",
-  "trades": [],
-  "daily": []
+  "schema": 1,
+  "trades": []
 }

@@ -1,20 +1,64 @@
 {
-  "schema": 1,
-  "status": "NOT_YET_RUN",
-  "as_of": "UNAVAILABLE",
-  "provider": "UNAVAILABLE",
+  "actual_broker_orders_from_agents": 0,
+  "agents": [
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "Market Analyst",
+      "symbol": "SPY"
+    },
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "Technical Analyst",
+      "symbol": "SPY"
+    },
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "News Researcher",
+      "symbol": "SPY"
+    },
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "Strategy Analyst",
+      "symbol": "SPY"
+    },
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "Risk Manager",
+      "symbol": "SPY"
+    },
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "Desk Lead",
+      "symbol": "SPY"
+    },
+    {
+      "action": "HOLD",
+      "confidence": 0.5,
+      "role": "Trade Reviewer",
+      "symbol": "SPY"
+    }
+  ],
+  "as_of": "2026-10-21",
   "consensus": "NO_CONSENSUS",
   "hypothesis": null,
-  "agents": [],
+  "note": "Separate $10,000 virtual ledger, hypothetical NEXT-session daily-close fills only; not Webull orders, live returns or an audited backtest.",
+  "provider": "gemini",
+  "queued_virtual_intent": null,
+  "schema": 1,
+  "status": "RESEARCH_ONLY",
   "virtual_paper": {
-    "status": "ENABLED",
-    "starting_equity": 10000,
-    "current_equity": null,
-    "cumulative_return_pct": null,
-    "worst_observed_drawdown_pct": null,
+    "cumulative_return_pct": 0.0,
+    "current_equity": 10000.0,
+    "latest_trades": [],
     "simulated_trades": 0,
-    "latest_trades": []
-  },
-  "actual_broker_orders_from_agents": 0,
-  "note": "Seven-agent feed not yet run. No Webull broker orders; virtual paper only."
+    "starting_equity": 10000.0,
+    "status": "ENABLED",
+    "worst_observed_drawdown_pct": 0.0
+  }
 }
