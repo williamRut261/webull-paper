@@ -249,6 +249,7 @@ class CloudDashboardSafetyTests(unittest.TestCase):
 
     def test_report_amounts_do_not_fabricate(self):
         self.assertEqual(dollars(None), "Unavailable")
+        self.assertEqual(dollars(-0.0), "$0.00")
         self.assertEqual(normalize_positions([{
             "symbol": "SOXS", "quantity": 4, "last_price": None
         }])[0]["market_value"], "Unavailable")
