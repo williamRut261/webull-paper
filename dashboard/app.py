@@ -7,7 +7,6 @@ Do not deploy with anonymous access or without Cloud Run IAP.
 from datetime import datetime, timezone
 import hashlib
 import hmac
-import logging
 import math
 import os
 import re
