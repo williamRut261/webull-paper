@@ -61,7 +61,9 @@ def amount(value):
 
 
 def dollars(number):
-    return "Unavailable" if number is None else f"${number:,.2f}"
+    if number is None:
+        return "Unavailable"
+    return f"${(0.0 if abs(number) < 0.005 else number):,.2f}"
 
 
 def first_value(entry, names):
