@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from dashboard.app import (
     app, OFFICE_ROLES, build_office_workers, read_office_run,
-    read_office_role_checks,
+    read_office_role_checks, _office_status_cache,
 )
 
 
@@ -207,7 +207,7 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b'data-action="HOLD"', response.data)
                     self.assertIn(b'data-symbol="SPY"', response.data)
                     self.assertIn(b'<script src="/office/world.js" defer></script>', response.data)
-                    self.assertIn(b'content="30"', response.data)
+                    self.assertNotIn(b'meta http-equiv="refresh"', response.data)
                     self.assertEqual(response.headers.get("Cache-Control"), "private, no-store")
                     self.assertIn("default-src 'none'", response.headers.get("Content-Security-Policy"))
                     self.assertIn("img-src 'self'", response.headers.get("Content-Security-Policy"))
@@ -237,7 +237,9 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertIn("prefers-reduced-motion", code)
         self.assertIn("stage===\"WORKING\"", code)
         self.assertIn("resetWalk()", code)
-        for forbidden in ("fetch(", "XMLHttpRequest", "axios", "WebSocket",
+        self.assertIn('window.fetch("/office/status"', code)
+        self.assertIn('credentials: "same-origin"', code)
+        for forbidden in ("XMLHttpRequest", "axios", "WebSocket",
                           "place_order", "create_order", "submit_order",
                           "localStorage", "eval(", "new Function("):
             self.assertNotIn(forbidden, code)
@@ -245,6 +247,79 @@ class AgentOfficeTests(unittest.TestCase):
                   "dashboard/Dockerfile").read_text()
         self.assertIn("COPY templates/ /app/templates/", docker)
         self.assertIn("COPY static/ /app/static/", docker)
+
+    def test_authenticated_live_status_is_read_only_and_cached(self):
+        audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
+        sha = "a" * 40
+        run = {"head_sha": sha, "run_id": 174, "state": "in_progress",
+               "active": True, "queued": False, "expired": False,
+               "conclusion": "", "created": "2026-10-22T23:35:00",
+               "run_url": "https://github.com/williamRut261/webull-paper/actions/runs/174"}
+        settings = {"IAP_AUDIENCE": audience, "DASHBOARD_ALLOWED_EMAIL": "owner@example.com"}
+        _office_status_cache.update({"expires": 0.0, "payload": None})
+        with patch.dict(os.environ, settings, clear=True):
+            with app.test_client() as client:
+                self.assertEqual(client.get("/office/status").status_code, 403)
+                self.assertEqual(client.post("/office/status").status_code, 405)
+            with patch("dashboard.app.id_token.verify_token", return_value={
+                "iss": "https://cloud.google.com/iap", "email": "owner@example.com"
+            }), patch("dashboard.app.read_office_run", return_value=run) as get_run, \
+                 patch("dashboard.app.read_office_role_checks", return_value={
+                     "Market Analyst": "WORKING", "Risk Manager": "DONE"
+                 }) as get_checks, \
+                 patch("dashboard.app.read_agent_feed", return_value=recorded_report()):
+                with app.test_client() as client:
+                    headers = {"X-Goog-Iap-Jwt-Assertion": "signed"}
+                    first = client.get("/office/status", headers=headers)
+                    self.assertEqual(first.status_code, 200)
+                    self.assertEqual(first.headers["Cache-Control"],
+                                     "private, no-store, max-age=0")
+                    data = first.json
+                    self.assertEqual(data["source"], "VERIFIED")
+                    self.assertEqual(len(data["roles"]), 7)
+                    self.assertEqual(data["roles"][0]["stage"], "WORKING")
+                    self.assertEqual(data["roles"][4]["stage"], "DONE")
+                    self.assertEqual(data["roles"][6]["stage"], "UNAVAILABLE")
+                    self.assertEqual(data["run"]["state"], "in_progress")
+                    self.assertEqual(data["roles"][0]["action"], "HOLD")
+                    self.assertNotIn("account_id", first.get_data(as_text=True))
+                    self.assertNotIn("password", first.get_data(as_text=True))
+                    second = client.get("/office/status", headers=headers)
+                    self.assertEqual(second.json, data)
+                    get_run.assert_called_once()
+                    get_checks.assert_called_once_with(
+                        sha, run_id=174, run_active=True)
+        _office_status_cache.update({"expires": 0.0, "payload": None})
+
+    def test_live_status_fails_closed_on_api_error_or_abandoned_run(self):
+        audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
+        settings = {"IAP_AUDIENCE": audience, "DASHBOARD_ALLOWED_EMAIL": "owner@example.com"}
+        _office_status_cache.update({"expires": 0.0, "payload": None})
+        with patch.dict(os.environ, settings, clear=True):
+            with patch("dashboard.app.id_token.verify_token", return_value={
+                "iss": "https://cloud.google.com/iap", "email": "owner@example.com"
+            }), patch("dashboard.app.read_office_run", side_effect=RuntimeError("rate limit")), \
+                 patch("dashboard.app.read_agent_feed", return_value=None):
+                with app.test_client() as client:
+                    result = client.get("/office/status",
+                        headers={"X-Goog-Iap-Jwt-Assertion": "signed"})
+                    self.assertEqual(result.status_code, 200)
+                    self.assertEqual(result.json["source"], "UNAVAILABLE")
+                    self.assertIsNone(result.json["run"])
+                    self.assertTrue(all(row["stage"] == "UNAVAILABLE"
+                                        for row in result.json["roles"]))
+        _office_status_cache.update({"expires": 0.0, "payload": None})
+
+    def test_partial_workflow_discovery_never_claims_current_work(self):
+        def opener(req, timeout):
+            if "ai-trading-desk.yml" in req.full_url:
+                raise RuntimeError("research status unavailable")
+            source = run_response("completed", "success")
+            source["workflow_runs"][0]["name"] = (
+                "One-Time Seven-Agent Provider Verification (NO BROKER)")
+            return Response(json.dumps(source).encode("utf-8"))
+        with self.assertRaises(RuntimeError):
+            read_office_run(opener=opener)
 
     def test_sprites_and_world_script_are_iap_protected_and_allowlisted(self):
         audience = "/projects/123/locations/us-central1/services/webull-paper-viewer"
