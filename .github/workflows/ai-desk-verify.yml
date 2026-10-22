@@ -1,0 +1,62 @@
+name: One-Time Seven-Agent Provider Verification (NO BROKER)
+on:
+  push:
+    branches: [main]
+    paths: ["research/ai-desk-verify.trigger"]
+permissions:
+  contents: write
+concurrency:
+  group: ai-desk-research-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      AI_DESK_GEMINI_MODEL: ${{ vars.AI_DESK_GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      AI_PAPER_KILL_SWITCH: ${{ vars.AI_PAPER_KILL_SWITCH || 'false' }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify seven real Gemini research requests without broker access
+        run: |
+          set -o pipefail
+          python -m research.ai_desk --provider gemini --symbol GDXD --out out/verify
+      - name: Publish strictly sanitized virtual-paper research snapshot
+        if: always()
+        run: |
+          if test -f out/verify/report.json; then
+            kill_arg=""
+            if [ "$AI_PAPER_KILL_SWITCH" = "true" ]; then kill_arg="--kill"; fi
+            python -m research.agent_paper \
+              --report out/verify/report.json \
+              --ledger research/agent_virtual_ledger.json \
+              --status research/ai_desk_status.json $kill_arg
+            git add research/agent_virtual_ledger.json research/ai_desk_status.json
+            if ! git diff --cached --quiet; then
+              git config user.name 'github-actions[bot]'
+              git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+              git commit -m 'research: one-time real-provider verification snapshot [skip ci]'
+              git push origin HEAD:main
+            fi
+          fi
+      - name: Report real-model verification result
+        if: always()
+        run: |
+          if test -f out/verify/report.md; then
+            cat out/verify/report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Verification failed before report generation. No broker requests." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload seven-agent evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-desk-one-time-verify-${{ github.run_id }}
+          path: out/verify/
+          if-no-files-found: warn
+          retention-days: 14
