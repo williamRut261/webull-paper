@@ -193,7 +193,7 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b"Market Analyst", response.data)
                     self.assertIn(b"Trade Reviewer", response.data)
                     self.assertIn(b"DESK RUN IN PROGRESS", response.data)
-                    self.assertIn(b"Individual role stages come from", response.data)
+                    self.assertIn(b"Only an active, run-matched GitHub Check", response.data)
                     self.assertEqual(response.data.count(b'class="pod '), 7)
                     self.assertIn(b'id="motion"', response.data)
                     self.assertIn(b"prefers-reduced-motion", response.data)
@@ -220,7 +220,7 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertIn("agent-walker", source)
         self.assertIn("@keyframes step-leg", source)
         self.assertIn('aria-label="Animated virtual research office"', source)
-        self.assertIn("stage remains unavailable", source.lower())
+        self.assertIn("missing events remain unavailable", source.lower())
         docker = (Path(__file__).resolve().parents[1] /
                   "dashboard/Dockerfile").read_text()
         self.assertIn("COPY templates/ /app/templates/", docker)
