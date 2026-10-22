@@ -619,8 +619,8 @@ def read_office_conversation(opener=urlopen):
 
 
 # One-instance cache bounds GitHub REST consumption. At idle,
-# three workflow requests are made no more than once every four minutes;
-# while a run is active, Check reads add a request about every 100s.
+# three workflow requests are made once per six minutes when idle;
+# active runs refresh around five minutes with one additional Check read.
 # The UI therefore reports *polled* activity, never sub-second streaming.
 _office_status_lock = threading.Lock()
 _office_status_cache = {"expires": 0.0, "payload": None}
