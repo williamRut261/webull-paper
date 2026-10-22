@@ -3,48 +3,48 @@
   "agents": [
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "Market Analyst",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     },
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "Technical Analyst",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     },
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "News Researcher",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     },
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "Strategy Analyst",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     },
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "Risk Manager",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     },
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "Desk Lead",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     },
     {
       "action": "HOLD",
-      "confidence": 0.5,
+      "confidence": 0.6,
       "role": "Trade Reviewer",
-      "symbol": "SPY"
+      "symbol": "GDXD"
     }
   ],
-  "as_of": "2026-10-21",
+  "as_of": "2026-10-22",
   "consensus": "NO_CONSENSUS",
   "hypothesis": null,
   "note": "Separate $10,000 virtual ledger, hypothetical NEXT-session daily-close fills only; not Webull orders, live returns or an audited backtest.",

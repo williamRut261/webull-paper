@@ -5,9 +5,14 @@
       "day": "2026-10-21",
       "drawdown_pct": 0.0,
       "equity": 10000.0
+    },
+    {
+      "day": "2026-10-22",
+      "drawdown_pct": 0.0,
+      "equity": 10000.0
     }
   ],
-  "last_day": "2026-10-21",
+  "last_day": "2026-10-22",
   "peak_equity": 10000.0,
   "pending": null,
   "positions": {},
