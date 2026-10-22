@@ -552,7 +552,7 @@ def office_world():
 def office_sprite(name):
     """Only six bundled MIT-licensed sprites; no directory traversal."""
     authorized_user()
-    if not re.fullmatch(r"char_[0-5]\\.png", name):
+    if not re.fullmatch(r"char_[0-5]\.png", name):
         abort(404)
     response = make_response(app.send_static_file("office-sprites/" + name))
     response.headers["Cache-Control"] = "private, max-age=3600"
