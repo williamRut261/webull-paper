@@ -31,7 +31,7 @@
       color: d.color, stage: d.stage, action: d.action, symbol: d.symbol,
       confidence: d.confidence, desk: desks[i], home,
       x: home.x, y: home.y, path: [], dwell: 0, sprite: i % 6, direction: "down",
-      walking: false
+      walking: false, breakTaken: false
     };
   });
   const chars = [];
@@ -223,7 +223,7 @@
     const a=agents[i],coffee=(i%2===0),dest=coffee?[1043,609]:[98,640];
     a.path=[[a.home.x,421],[dest[0],421],[dest[0],dest[1]],
       [dest[0],421],[a.home.x,421],[a.home.x,a.home.y]];
-    a.dwell=0;a.walking=true;wandering=i;
+    a.dwell=0;a.breakTaken=false;a.walking=true;wandering=i;
   }
   function update(dt) {
     if(!running||reduced.matches||!visible) {
@@ -240,8 +240,9 @@
     if(wandering<0)return;
     const a=agents[wandering];
     if(!a.path.length){a.x=a.home.x;a.y=a.home.y;a.walking=false;wandering=-1;return;}
-    if(a.path.length===3&&!a.dwell){
+    if(a.path.length===3&&!a.breakTaken){
       a.dwell=1200;
+      a.breakTaken=true;
       a.walking=false;
     }
     if(a.dwell>0){a.dwell-=dt;return;}
@@ -249,7 +250,7 @@
     positionTowards(a,a.path[0],dt);
   }
   function resetWalk(){
-    for(const a of agents){a.x=a.home.x;a.y=a.home.y;a.path=[];a.walking=false;a.dwell=0;a.direction="down";}
+    for(const a of agents){a.x=a.home.x;a.y=a.home.y;a.path=[];a.walking=false;a.dwell=0;a.breakTaken=false;a.direction="down";}
     wandering=-1;sinceWalk=0;
   }
   function render(timestamp) {
