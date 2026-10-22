@@ -1,0 +1,73 @@
+name: Autonomous Seven-Agent Office (RESEARCH ONLY - NO BROKER)
+on:
+  workflow_dispatch:
+  schedule:
+    # Two real model replies each UTC hour, around the clock. GitHub may delay jobs.
+    - cron: "8 * * * *"
+
+permissions:
+  contents: write
+  checks: write
+
+concurrency:
+  group: office-autonomous-dialogue-main
+  cancel-in-progress: false
+
+jobs:
+  conversation:
+    if: github.ref == 'refs/heads/main' && vars.OFFICE_CONVERSATION_ENABLED != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      AI_DESK_GEMINI_MODEL: ${{ vars.AI_DESK_GEMINI_MODEL || 'gemini-3.5-flash-lite' }}
+      OFFICE_CONVERSATION_ENABLED: 'true'
+      AI_OFFICE_CHECKS_ENABLED: 'true'
+      AI_OFFICE_GITHUB_TOKEN: ${{ github.token }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Converse across two different specialist roles (max 48 model calls UTC/day)
+        run: python -m research.office_conversation
+      - name: Persist strictly sanitized public research-only conversation
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          if git diff --quiet -- research/office_conversation.json; then
+            echo "No conversation changes to publish"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add research/office_conversation.json
+          git commit -m 'research: publish bounded office conversation [skip ci]'
+          # Other workflows may also publish sanitized status; rebase only this
+          # independent file before pushing; never force-push trading code.
+          for retry in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              echo "OFFICE_DIALOGUE_PUBLISHED"
+              exit 0
+            fi
+          done
+          echo "OFFICE_DIALOGUE_PUBLISH_FAILED"
+          exit 1
+      - name: Summarize actual model-call attempts and limits
+        if: always()
+        run: |
+          echo "## Autonomous office — research only" >> "$GITHUB_STEP_SUMMARY"
+          echo "Hard caps: 2 API calls per run, 48/day UTC. No broker capability." >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          from pathlib import Path
+          import json
+          path=Path('research/office_conversation.json')
+          if path.exists():
+              state=json.loads(path.read_text())
+              print('Date (UTC):',state.get('day_utc','?'))
+              print('Model calls today:',state.get('calls_today','?'),'/48')
+              print('Published conversation turns:',len(state.get('messages',[])))
+          PY
