@@ -13,6 +13,8 @@ import logging
 import math
 import os
 import re
+import threading
+import time
 
 from flask import Flask, abort, make_response, render_template, render_template_string, request
 from google.auth.transport.requests import Request as GoogleRequest
@@ -414,9 +416,11 @@ def read_office_run(opener=urlopen):
             )
         except Exception as error:
             failures.append(error)
+    # An unreachable workflow endpoint may hide a more recent active run.
+    # Never present the other endpoint as definitive if the read was partial.
+    if failures:
+        raise failures[0]
     if not candidates:
-        if failures:
-            raise failures[0]
         return None
     latest = max(candidates, key=lambda r: (
         str(r.get("created_at") or ""), r.get("id") if type(r.get("id")) is int else 0
@@ -561,6 +565,101 @@ def office_sprite(name):
     return response
 
 
+
+# One-instance cache bounds unauthenticated GitHub API consumption. Public
+# GitHub REST normally allows only 60 requests/hour per source IP. At idle,
+# two workflow requests are made no more than once every four minutes;
+# while a run is active, role Checks add one more request about every 100s.
+# The UI therefore reports *polled* activity, never sub-second streaming.
+_office_status_lock = threading.Lock()
+_office_status_cache = {"expires": 0.0, "payload": None}
+
+
+def read_office_status_snapshot():
+    """Owner-only sanitized read model; cache checked stages across viewers.
+
+    Return UNAVAILABLE on upstream error rather than replaying an expired
+    WORKING state. Only exact known roles and whitelisted opinions are sent.
+    No prompt, token, account identifier or broker endpoint is exposed.
+    """
+    with _office_status_lock:
+        now = time.monotonic()
+        if (_office_status_cache["payload"] is not None
+                and now < _office_status_cache["expires"]):
+            return _office_status_cache["payload"]
+        run, statuses, agent = None, {}, None
+        source, checked_at = "VERIFIED", datetime.now(timezone.utc).isoformat(timespec="seconds")
+        try:
+            run = read_office_run()
+        except Exception as error:
+            app.logger.warning("office_live_run_unavailable exception_type=%s",
+                               type(error).__name__)
+            source = "UNAVAILABLE"
+        if run:
+            try:
+                statuses = read_office_role_checks(
+                    run.get("head_sha"), run_id=run.get("run_id"),
+                    run_active=run.get("active", False))
+            except Exception as error:
+                app.logger.warning("office_live_checks_unavailable exception_type=%s",
+                                   type(error).__name__)
+                source = "PARTIAL" if source == "VERIFIED" else source
+        try:
+            agent = read_agent_feed()
+        except Exception as error:
+            app.logger.warning("office_live_opinions_unavailable exception_type=%s",
+                               type(error).__name__)
+        rows = build_office_workers(agent, statuses)
+        roles = [
+            {"role": row["title"], "stage": row["stage"] or "UNAVAILABLE",
+             "action": (row["vote"] or {}).get("action", "UNAVAILABLE"),
+             "symbol": (row["vote"] or {}).get("symbol", ""),
+             "confidence": (row["vote"] or {}).get("confidence", "")}
+            for row in rows
+        ]
+        if source == "UNAVAILABLE":
+            # Partial/failed latest-run discovery cannot establish active work.
+            for row in roles:
+                row["stage"] = "UNAVAILABLE"
+            run = None
+        ttl = 100 if run and (run["active"] or run["queued"]) else 240
+        if source != "VERIFIED":
+            ttl = 75
+        payload = {
+            "source": source, "checked_at": checked_at,
+            "refresh_after_seconds": ttl,
+            "run": {
+                "state": run["state"], "conclusion": run["conclusion"],
+                "active": run["active"], "queued": run["queued"],
+                "expired": run["expired"], "run_url": run["run_url"],
+                "created": run["created"]
+            } if run else None,
+            "roles": roles,
+            "research": {
+                "consensus": agent["consensus"], "decision": agent["decision"],
+                "provider": agent["provider"], "as_of": agent["as_of"],
+                "stale": agent["stale"],
+            } if agent else None,
+            "verified_count": len(statuses) if source != "UNAVAILABLE" else 0,
+        }
+        _office_status_cache["payload"] = payload
+        _office_status_cache["expires"] = now + ttl
+        return payload
+
+
+@app.get("/office/status")
+def office_live_status():
+    """Read-only, IAP-protected polling endpoint; never places orders."""
+    authorized_user()
+    response = make_response(app.json.response(read_office_status_snapshot()))
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
+
+
 @app.get("/office")
 def office():
     authorized_user()
@@ -593,7 +692,7 @@ def office():
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+        "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
     return response
 
 
