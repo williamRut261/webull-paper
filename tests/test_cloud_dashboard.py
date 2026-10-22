@@ -1,11 +1,12 @@
 """Offline tests for private read-only Cloud Run dashboard; no broker or GCP calls."""
 import hashlib
+import logging
 import os
 import unittest
 from unittest.mock import patch
 from dashboard.app import (
     SANDBOX_HOST, app, choose_account, dollars, normalize_history,
-    normalize_positions, read_snapshot, records,
+    normalize_positions, read_snapshot, records, sandbox_trade_client,
 )
 
 ACCOUNT_ID = "synthetic-secret-sandbox-account"
@@ -69,6 +70,44 @@ class FakeTrade:
 class CloudDashboardSafetyTests(unittest.TestCase):
     def test_sandbox_hostname_is_fixed(self):
         self.assertEqual(SANDBOX_HOST, "api.sandbox.webull.com")
+
+    def test_sdk_uses_writable_critical_only_log_file(self):
+        class FakeApiClient:
+            instances = []
+
+            def __init__(self, key, secret, region):
+                self.init_args = (key, secret, region)
+                self.endpoint = None
+                self.file_logger = None
+                self.__class__.instances.append(self)
+
+            def add_endpoint(self, region, host):
+                self.endpoint = (region, host)
+
+            def set_file_logger(self, path, log_level):
+                self.file_logger = (path, log_level)
+
+        class FakeTradeClient:
+            def __init__(self, api_client):
+                self.api_client = api_client
+
+        settings = {
+            "WEBULL_PAPER_APP_KEY": "synthetic-key",
+            "WEBULL_PAPER_APP_SECRET": "synthetic-secret",
+        }
+        with patch.dict(os.environ, settings, clear=True):
+            with patch("webull.core.client.ApiClient", FakeApiClient), patch(
+                "webull.trade.trade_client.TradeClient", FakeTradeClient
+            ):
+                trade = sandbox_trade_client()
+
+        self.assertIsInstance(trade, FakeTradeClient)
+        api = FakeApiClient.instances[-1]
+        self.assertEqual(api.init_args[2], "us")
+        self.assertEqual(api.endpoint, ("us", SANDBOX_HOST))
+        self.assertEqual(
+            api.file_logger, ("/tmp/webull_trade_sdk.log", logging.CRITICAL)
+        )
 
     def test_pinned_account_is_required_and_not_guessable(self):
         accounts = [{"account_id": ACCOUNT_ID, "account_type": "CASH"}]

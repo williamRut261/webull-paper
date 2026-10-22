@@ -7,6 +7,7 @@ Do not deploy with anonymous access or without Cloud Run IAP.
 from datetime import datetime, timezone
 import hashlib
 import hmac
+import logging
 import math
 import os
 import re
@@ -190,6 +191,13 @@ def sandbox_trade_client():
         raise RuntimeError("Missing sandbox credentials")
     sdk = ApiClient(key, secret, "us")
     sdk.add_endpoint("us", SANDBOX_HOST)
+    # The SDK defaults to writing a log in the read-only /app directory and
+    # can include broker exception details. Keep its file output ephemeral and
+    # above all normal/error events; dashboard diagnostics remain stage-only.
+    sdk.set_file_logger(
+        path="/tmp/webull_trade_sdk.log",
+        log_level=logging.CRITICAL,
+    )
     return TradeClient(sdk)
 
 
