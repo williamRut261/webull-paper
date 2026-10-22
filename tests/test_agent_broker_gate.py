@@ -112,6 +112,16 @@ class AgentBrokerGateTests(unittest.TestCase):
                  patch("trader_combo.morning.run_scan", side_effect=AssertionError("scan should not run")):
                 self.assertEqual(main(), 0)
 
+    def test_broker_kill_switch_prevents_scan_and_all_webull_calls(self):
+        from trader_combo.morning import main
+        with patch.dict(os.environ, {"AI_DESK_PAPER_GATE_ENABLED": "true",
+                                       "AI_PAPER_BROKER_KILL_SWITCH": "true"}):
+            with patch("trader_combo.morning.assert_sandbox"), \
+                 patch("trader_combo.morning.morning_wait_seconds", return_value=0), \
+                 patch("trader_combo.morning.morning_guard"), \
+                 patch("trader_combo.morning.run_scan", side_effect=AssertionError("no scan")):
+                self.assertEqual(main(), 0)
+
     def test_approval_is_not_direct_authority_to_place_orders(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[1]
