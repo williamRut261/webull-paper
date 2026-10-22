@@ -94,10 +94,32 @@ class CloudDashboardSafetyTests(unittest.TestCase):
         self.assertEqual(broker.order_v3.calls, ["GET_HISTORY"])
         self.assertNotIn(ACCOUNT_ID, str(snap))
 
-    def test_history_unavailable_is_not_silently_empty(self):
-        snap = read_snapshot(FakeTrade(True), PIN)
+    def test_history_unavailable_is_not_silently_empty_or_logged_with_details(self):
+        with self.assertLogs("dashboard.app", level="WARNING") as captured:
+            snap = read_snapshot(FakeTrade(True), PIN)
         self.assertIn("unavailable", snap["history_note"].lower())
         self.assertEqual(snap["history"], [])
+        output = "\\n".join(captured.output)
+        self.assertIn("stage=order_history", output)
+        self.assertIn("exception_type=ConnectionError", output)
+        self.assertNotIn("secret account exception", output)
+        self.assertNotIn(ACCOUNT_ID, output)
+
+    def test_required_read_failure_logs_stage_and_type_only(self):
+        broker = FakeTrade()
+        failure_text = "private account id and broker response"
+        with patch.object(
+            broker.account_v2, "get_account_list",
+            side_effect=RuntimeError(failure_text),
+        ):
+            with self.assertLogs("dashboard.app", level="ERROR") as captured:
+                with self.assertRaises(RuntimeError):
+                    read_snapshot(broker, PIN)
+        output = "\\n".join(captured.output)
+        self.assertIn("stage=account_list", output)
+        self.assertIn("exception_type=RuntimeError", output)
+        self.assertNotIn(failure_text, output)
+        self.assertNotIn(ACCOUNT_ID, output)
 
     def test_report_amounts_do_not_fabricate(self):
         self.assertEqual(dollars(None), "Unavailable")
