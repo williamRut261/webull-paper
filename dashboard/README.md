@@ -1,6 +1,9 @@
 # Private Webull PAPER portfolio viewer — Cloud Run preparation
 
-**Status: source and offline tests prepared. NOT DEPLOYED.**
+**Status (2026-10-22): The private Cloud Run dashboard was reported
+deployed at https://webull-paper-viewer-u5zsqujpbq-uc.a.run.app/
+(revision webull-paper-viewer-00004-mn4). Sign-in and read-only
+sandbox data retrieval were reported working. Reverify after changes.**
 
 This isolated, GET-only viewer connects to the pinned Webull OpenAPI
 SANDBOX hostname, api.sandbox.webull.com. It shows current paper
@@ -87,3 +90,30 @@ cloud service or usage is universally covered.
 No Google Cloud budget, IAP policy, service, Secret Manager credential,
 or externally accessible URL has been created from this change alone.
 No production or paper orders are ever placed by this viewer.
+
+
+## Remaining tasks and balance reconciliation (2026-10-22)
+
+- **OAuth rotation:** A Google OAuth CLIENT SECRET (not a Webull
+  secret) was inadvertently exposed during setup. In Google Auth
+  Platform > Clients, the owner must create a replacement, update
+  IAP custom OAuth to use the new secret, test fresh login and
+  signed-out denial, then disable and eventually delete the
+  exposed secret. Do not paste it into GitHub or turn off IAP.
+  The rotation is NOT verified by repository tests.
+- **Balance reconciliation:** The dashboard reads the Webull
+  authoritative total_net_liquidation_value, total_cash_balance,
+  and optional total_market_value, and displays an independently
+  computed last-price-by-quantity estimate. Report both broker
+  market value minus price estimate and equity minus cash minus
+  broker market value. Neither difference proves realized profit.
+  Missing broker market values appear as Unavailable, never as zero.
+- **Cloud Run revision:** A source commit does NOT deploy itself.
+  After tests, roll out the reviewed dashboard revision and
+  reverify account pin, IAP sign-in, signed-out denial, cash,
+  broker market value, positions and latest available orders.
+  Preserve the existing Cloud Run $10 spend cap and bot schedules.
+
+No repository code can rotate a secret, grant Google Cloud access,
+or independently validate a broker balance without an authenticated
+read-only request.
