@@ -67,18 +67,25 @@ def approved_ticket(report, trade_day):
     # Existing gate independently checks all seven ordered roles, age, vetoes,
     # provider, non-executable research flag and risk-on BUY consensus.
     gate=evaluate_agent_gate(report,trade_day)
-    if not gate["approved"]:
+    # The pre-existing gate validates schema, prior-day age and all seven
+    # opinions even when it denies permission to BUY an existing ORB signal.
+    hypothesis=report.get("hypothesis")
+    if report.get("consensus")!="HYPOTHESIS_FOR_BACKTEST" or not isinstance(hypothesis,dict):
+        return {"approved":False,"reason":"NO_STRUCTURED_CONSENSUS"}
+    symbol=hypothesis.get("symbol")
+    side=hypothesis.get("action")
+    if symbol not in ALLOWED or side not in ("BUY","SELL"):
+        return {"approved":False,"reason":"UNSUPPORTED_SYMBOL_OR_SIDE"}
+    votes=report["agents"]
+    agrees=lambda row: (row["symbol"]==symbol and row["action"]==side
+                         and row["confidence"]>=0.65)
+    if (sum(agrees(row) for row in votes[:4])<3
+            or not all(agrees(row) for row in votes[4:])):
+        return {"approved":False,"reason":"SEVEN_AGENT_VETO"}
+    if side=="BUY" and not gate["approved"]:
         return {"approved":False,"reason":gate["reason"]}
-    symbol=report["hypothesis"]["symbol"]
-    if symbol not in ALLOWED:
-        return {"approved":False,"reason":"UNSUPPORTED_SYMBOL"}
-    # An extra independent Trade Reviewer BUY approval avoids the older
-    # advisory gate's allowance for a reviewer HOLD.
-    reviewer=report["agents"][6]
-    if (reviewer["action"]!="BUY" or reviewer["symbol"]!=symbol
-            or reviewer["confidence"]<0.65):
-        return {"approved":False,"reason":"REVIEWER_NOT_EXPLICIT"}
-    return {"approved":True,"symbol":symbol,"side":"BUY",
+    # SELL means reduce an existing owned sandbox position, never short.
+    return {"approved":True,"symbol":symbol,"side":side,
             "reason":"SEVEN_AGENT_RISK_APPROVED"}
 
 
@@ -163,6 +170,22 @@ def build_payload(symbol, price, equity, cash, day):
             "entrust_type":"QTY"}
 
 
+
+def build_sell_payload(symbol, held_qty, day):
+    if symbol not in ALLOWED or type(held_qty) not in (int,float) or (
+            not math.isfinite(held_qty) or held_qty<=0):
+        raise RuntimeError("Invalid sandbox sell position")
+    q=Decimal(str(held_qty)).quantize(Decimal("0.000001"),rounding=ROUND_DOWN)
+    if q>=1 and q!=q.to_integral_value(rounding=ROUND_DOWN):
+        raise RuntimeError("Broker fractional mixed positions require manual reconciliation")
+    return {"client_order_id":CID_PREFIX+day.replace("-","")+"S"+symbol,
+            "combo_type":"NORMAL","symbol":symbol,
+            "instrument_type":"EQUITY","market":"US",
+            "order_type":"MARKET","quantity":str(q),"side":"SELL",
+            "time_in_force":"DAY","support_trading_session":"CORE",
+            "entrust_type":"QTY"}
+
+
 def execute_one(trade,data,account_id,ticket, now,*, dry_run=True,
                 clock=None, submit=preview_and_place):
     session_guard(now)
@@ -170,20 +193,29 @@ def execute_one(trade,data,account_id,ticket, now,*, dry_run=True,
     verify_order_book(trade,account_id,today)
     equity,cash,positions=checked_portfolio(trade,account_id,
                                             allowed_extra=ALLOWED)
-    if positions:
-        # No automatic liquidation of unrecognized/existing inventory;
-        # exit logic requires explicit separate design and testing.
-        return {"status":"NO_TRADE_EXISTING_POSITION","orders":0}
     symbol=ticket["symbol"]
+    side=ticket.get("side","BUY")
+    if side not in ("BUY","SELL") or symbol not in ALLOWED:
+        raise RuntimeError("Invalid agent order authority")
+    if positions and (side=="BUY" or set(positions)!={symbol}):
+        return {"status":"NO_TRADE_EXISTING_POSITION","orders":0}
+    if side=="SELL" and symbol not in positions:
+        return {"status":"NO_POSITION_TO_SELL","orders":0}
     observed_clock=clock or (lambda:datetime.now(NY))
     prices,_=collect_snapshots(data,[symbol],now,True,clock=observed_clock)
     observed_at=observed_clock()
     session_guard(observed_at)
     prices.validate({symbol},observed_at)
-    order=build_payload(symbol,prices[symbol],equity,cash,today)
+    if side=="BUY":
+        order=build_payload(symbol,prices[symbol],equity,cash,today)
+    else:
+        qty=positions[symbol]["qty"]
+        if qty*prices[symbol]<MIN_NOTIONAL:
+            return {"status":"SELL_BELOW_MINIMUM","orders":0}
+        order=build_sell_payload(symbol,qty,today)
     if dry_run:
         return {"status":"APPROVED_PLAN_ONLY","orders":0,
-                "symbol":symbol,"side":"BUY","quantity":order["quantity"]}
+                "symbol":symbol,"side":side,"quantity":order["quantity"]}
     # A locally atomic claim guards retry after a broken receipt; the cache
     # persists this claim across workflows when GitHub Actions saves it.
     claim_day(today)
@@ -194,16 +226,21 @@ def execute_one(trade,data,account_id,ticket, now,*, dry_run=True,
         verify_order_book(trade,account_id,today)
         updated_equity,updated_cash,updated_positions=checked_portfolio(
             trade,account_id,allowed_extra=ALLOWED)
-        if updated_positions or updated_cash < float(order["quantity"])*prices[symbol]*1.02:
-            raise RuntimeError("Cash/position changed since order plan")
+        if side=="BUY":
+            if updated_positions or updated_cash < float(order["quantity"])*prices[symbol]*1.02:
+                raise RuntimeError("Cash/position changed since order plan")
+        elif set(updated_positions)!={symbol} or abs(
+                updated_positions[symbol]["qty"]-positions[symbol]["qty"])>0.000001:
+            raise RuntimeError("Position changed since order plan")
         if updated_equity<=0:
             raise RuntimeError("Invalid paper equity")
     submit(trade,account_id,order,before_submit=before_submit,
            session_check=session_guard)
-    reconcile_order_fill(trade,account_id,symbol,"BUY",0,
+    reconcile_order_fill(trade,account_id,symbol,side,
+                         positions.get(symbol,{}).get("qty",0),
                          float(order["quantity"]),allowed_extra=ALLOWED)
     return {"status":"BROKER_SANDBOX_FILL_RECONCILED","orders":1,
-            "symbol":symbol,"side":"BUY","quantity":order["quantity"]}
+            "symbol":symbol,"side":side,"quantity":order["quantity"]}
 
 
 def main(argv=None):
