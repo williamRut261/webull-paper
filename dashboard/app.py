@@ -411,8 +411,11 @@ def read_office_run(opener=urlopen):
     run_id = latest.get("id")
     if type(run_id) is not int or run_id <= 0:
         raise ValueError("Missing run ID")
+    sha = latest.get("head_sha")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        sha = None
     return {
-        "state": state, "conclusion": conclusion,
+        "state": state, "conclusion": conclusion, "head_sha": sha,
         "active": state == "in_progress",
         "queued": state in ("queued", "waiting", "pending", "requested"),
         "run_url": (
@@ -423,16 +426,65 @@ def read_office_run(opener=urlopen):
     }
 
 
+def read_office_role_checks(sha, opener=urlopen):
+    """Read only fixed-name, public GitHub Check runs for exact workflow SHA.
+
+    No user-created text, broker details, LLM content or arbitrary links are
+    copied into the dashboard. Unavailable checks produce empty states.
+    """
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return {}
+    uri = ("https://api.github.com/repos/williamRut261/webull-paper/"
+           "commits/" + sha + "/check-runs?per_page=100")
+    req = UrlRequest(uri, headers={"User-Agent": "webull-paper-agent-office",
+                                   "Accept": "application/vnd.github+json"})
+    with opener(req, timeout=3) as response:
+        raw = response.read(80001)
+    if len(raw) > 80000:
+        raise ValueError("Oversized role metadata")
+    runs = json.loads(raw).get("check_runs")
+    if not isinstance(runs, list):
+        raise ValueError("Malformed role check states")
+    names = set(AGENT_ROLES)
+    statuses = {}
+    for item in runs:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name.startswith("AI Office / "):
+            continue
+        role = name[len("AI Office / "):]
+        if role not in names:
+            continue
+        status = item.get("status")
+        conclusion = item.get("conclusion")
+        if status == "in_progress":
+            state = "WORKING"
+        elif status == "completed" and conclusion == "success":
+            state = "DONE"
+        elif status == "completed" and conclusion in ("failure", "timed_out", "cancelled"):
+            state = "FAILED"
+        elif status == "queued":
+            state = "QUEUED"
+        else:
+            continue
+        # Most recent record wins if manually rerun for same SHA.
+        if role not in statuses:
+            statuses[role] = state
+    return statuses
+
+
 # Illustrated office markup is packaged as a standalone Jinja template.
 
 
-def build_office_workers(agent):
+def build_office_workers(agent, checks=None):
     """Join exact seven known roles to last published sanitized opinions."""
     opinions = {
         x["role"]: x for x in agent["agents"]
     } if agent and isinstance(agent.get("agents"), list) else {}
+    checks = checks or {}
     return [
-        {"title": title, "name": name, "task": task, "detail": detail,
+        {"title": title, "name": name, "task": task, "detail": detail, "stage": checks.get(title),
          "color": color, "tag": tag, "hair": (
              "#203953", "#503a3f", "#6a4952", "#262838", "#3f3844", "#6a5d43", "#283945"
          )[i], "vote": opinions.get(title)}
@@ -466,8 +518,15 @@ def office():
         app.logger.warning(
             "office_action_status_unavailable exception_type=%s", type(error).__name__)
         run = None
+    try:
+        checks = read_office_role_checks(run.get("head_sha")) if run else {}
+    except Exception as error:
+        app.logger.warning(
+            "office_role_status_unavailable exception_type=%s", type(error).__name__)
+        checks = {}
     response = make_response(render_template(
-        "office.html", workers=build_office_workers(agent), agent=agent, run=run))
+        "office.html", workers=build_office_workers(agent, checks),
+        agent=agent, run=run))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
