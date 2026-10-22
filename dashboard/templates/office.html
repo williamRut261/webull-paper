@@ -167,6 +167,10 @@ transition-property:left,top;transition-timing-function:linear;filter:drop-shado
 to{transform:rotate(23deg) translateY(5px)}}
 body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
 @media(prefers-reduced-motion:reduce){.agent-walker{transition:none!important}}
+
+.pod.is-running .pod-led{background:#79ffc1;box-shadow:0 0 12px #78ffbb;animation:beacon 1.2s infinite}
+.pod.is-failed .pod-led{background:#ff7378;box-shadow:0 0 9px #ff6666}
+.pod.is-done .pod-led{background:#66d1a5;box-shadow:0 0 5px #66d1a555}
 </style>
 </head>
 <body><main class="page">
@@ -203,12 +207,12 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
   <div class="room-label top">SECTOR A · RESEARCH PODS</div>
   <div class="carpet"></div><div class="runner-line"></div>
   {% for worker in workers %}
-   <details class="pod {% if worker.vote %}has-vote{% endif %} {% if run and run.active %}is-running{% endif %}"
+   <details class="pod {% if worker.vote %}has-vote{% endif %} {% if worker.stage == 'WORKING' %}is-running{% elif worker.stage == 'FAILED' %}is-failed{% elif worker.stage == 'DONE' %}is-done{% endif %}"
     style="--accent:{{worker.color}};--hair:{{worker.hair}}">
      <summary aria-label="Inspect {{worker.name}} — {{worker.title}}">
       <div class="pod-title"><div><div class="pod-name">{{worker.name}}</div>
       <div class="pod-role">{{worker.title}}</div></div><span class="pod-led"></span></div>
-      <div class="bubble">{% if run and run.active %}···{% elif worker.vote %}{{worker.vote.action}}{% else %}ZZZ{% endif %}</div>
+      <div class="bubble">{% if worker.stage == 'WORKING' %}WORK{% elif worker.stage == 'DONE' %}DONE{% elif worker.stage == 'FAILED' %}ERROR{% elif worker.stage == 'QUEUED' %}WAIT{% elif worker.vote %}{{worker.vote.action}}{% else %}ZZZ{% endif %}</div>
       <div class="pod-ambient"><div class="signal-graph"></div></div>
       <div class="monitor-mast"></div>
       <div class="person"><div class="head"></div><div class="jacket"></div><span class="limb l"></span><span class="limb r"></span></div>
@@ -218,6 +222,7 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
      </summary>
      <div class="inspect"><h3>{{worker.name}} // {{worker.title}}</h3>
        <p>{{worker.task}}. {{worker.detail}}.</p>
+       <p>Verified latest-run stage: <strong>{{worker.stage or 'UNAVAILABLE'}}</strong>.</p>
        {% if worker.vote %}
        <p>Last published: <strong>{{worker.vote.action}} {{worker.vote.symbol}}</strong> at {{worker.vote.confidence}} stated confidence.</p>
        {% else %}<p>No published opinion yet — awaiting validated data.</p>{% endif %}
@@ -242,7 +247,7 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
       <div class="micro">{% if agent %}{{agent.decision}}<br>Market data: {{agent.as_of}} · {{agent.provider}}{% if agent.stale %}<br><strong style="color:#ffbf7f">STALE RESEARCH</strong>{% endif %}{% else %}No validated seven-agent publication available.{% endif %}</div>
       <div class="metric"><span>Agent opinions</span><strong>{{agent.agents|length if agent else 0}} / 7</strong></div>
       <div class="metric"><span>Model</span><strong>{{agent.provider|upper if agent else "N/A"}}</strong></div>
-      <div class="metric"><span>Per-agent live tracking</span><strong>NOT EXPOSED</strong></div>
+      <div class="metric"><span>Per-agent live tracking</span><strong>{% if checks %}{{checks|length}} / 7 VERIFIED{% else %}UNAVAILABLE{% endif %}</strong></div>
     </div>
   </section>
   <section class="panel">
@@ -256,7 +261,7 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
        <div class="note">  {% if run %}{{run.created}} UTC{% else %}last run not accessible{% endif %}</div>
       </div>
       {% if run %}<p class="micro"><a href="{{run.run_url}}">VIEW VERIFIED GITHUB RUN ↗</a></p>{% endif %}
-      <p class="micro">During a run, the monitors glow and avatars type. Individual role progress is not exposed by the workflow. The scene never fabricates its timing.</p>
+      <p class="micro">During a run, the monitors glow and avatars type. Individual role stages come from signed-by-GitHub public Checks metadata when available; otherwise their stage remains unavailable. Ambient movement never signals real work.</p>
     </div>
   </section>
   <section class="panel">
