@@ -121,7 +121,7 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b"prefers-reduced-motion", response.data)
                     self.assertIn(b"robot", response.data)
                     self.assertIn(b"<details", response.data)
-                    self.assertNotIn(b"<script", response.data)
+                    self.assertIn(b'<script src="/office/motion.js" defer></script>', response.data)
                     self.assertIn(b"HOLD SPY", response.data)
                     self.assertIn(b"content=\"30\"", response.data)
                     self.assertEqual(response.headers.get("Cache-Control"), "private, no-store")
