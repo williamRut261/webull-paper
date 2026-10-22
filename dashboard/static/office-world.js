@@ -294,6 +294,143 @@
     const cssW=canvas.getBoundingClientRect().width,ratio=cssW/W;
     viewport.scrollTo({left:Math.max(0,a.x*ratio-viewport.clientWidth/2),behavior:reduced.matches?"auto":"smooth"});
   }
+  // Poll ONLY the IAP-protected same-origin, read-only status endpoint.
+  // Never derive WORKING from ambient animation, opinions or workflow-level CI.
+  const validStages = new Set(["WORKING", "DONE", "FAILED", "QUEUED", "STALE", "UNAVAILABLE"]);
+  const validActions = new Set(["BUY", "SELL", "HOLD", "NO_TRADE", "UNAVAILABLE"]);
+  const timelineRows = Array.from(document.querySelectorAll("#verified-timeline li"));
+  const statusLabel = document.getElementById("live-connection");
+  let statusTimer = null, fetching = false;
+  function put(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+  function scheduleStatus(seconds) {
+    if (statusTimer !== null) window.clearTimeout(statusTimer);
+    statusTimer = window.setTimeout(() => { statusTimer = null; void updateStatus(); },
+      Math.max(20, Math.min(600, seconds)) * 1000);
+  }
+  function markUnverified() {
+    for (let i = 0; i < agents.length; i++) {
+      agents[i].stage = "UNAVAILABLE";
+      const b = buttons[i], label = b.querySelector(".state");
+      b.dataset.stage = "UNAVAILABLE";
+      if (label) { label.textContent = "N/A"; label.className = "state"; }
+      if (timelineRows[i]) {
+        const state = timelineRows[i].querySelector(".role-stage");
+        const proof = timelineRows[i].querySelector(".role-proof");
+        const dot = timelineRows[i].querySelector(".dot");
+        if (state) state.textContent = "UNAVAILABLE";
+        if (proof) proof.textContent = "GitHub status unavailable";
+        if (dot) dot.className = "dot";
+      }
+    }
+    put("verified-count", "0 / 7 verified");
+    const runIndicator = document.getElementById("run-indicator");
+    if (runIndicator) {
+      runIndicator.className = "run-pill stale";
+      runIndicator.textContent = "○ LIVE RUN STATUS UNAVAILABLE";
+    }
+    if (statusLabel) statusLabel.textContent = "GitHub status unavailable · do not infer work";
+    pick(selected);
+  }
+  function applyStatus(payload) {
+    if (!payload || !Array.isArray(payload.roles) || payload.roles.length !== 7 ||
+        !["VERIFIED", "PARTIAL", "UNAVAILABLE"].includes(payload.source) ||
+        !payload.roles.every((r, i) => r && r.role === agents[i].role)) {
+      throw new Error("Invalid live status shape");
+    }
+    if (payload.source === "UNAVAILABLE") {
+      markUnverified();
+      return 75;
+    }
+    for (let i = 0; i < agents.length; i++) {
+      const incoming = payload.roles[i], a = agents[i];
+      const verified = payload.source === "VERIFIED" &&
+        validStages.has(incoming.stage);
+      const stage = verified ? incoming.stage : "UNAVAILABLE";
+      a.stage = stage;
+      const action = validActions.has(incoming.action) ? incoming.action : "UNAVAILABLE";
+      const symbol = typeof incoming.symbol === "string" &&
+        /^[A-Z0-9]{0,6}$/.test(incoming.symbol) ? incoming.symbol : "";
+      const confidence = typeof incoming.confidence === "string" &&
+        /^([0-9]{1,3})%$/.test(incoming.confidence) ? incoming.confidence : "";
+      a.action = action; a.symbol = symbol; a.confidence = confidence;
+      const b = buttons[i], pill = b.querySelector(".state");
+      b.dataset.stage = stage;
+      b.dataset.action = action;
+      b.dataset.symbol = symbol;
+      b.dataset.confidence = confidence;
+      if (pill) {
+        pill.className = "state " + ({
+          WORKING:"work", DONE:"done", FAILED:"failed", STALE:"stale"
+        }[stage] || "");
+        pill.textContent = stage === "UNAVAILABLE" ? "N/A" : stage;
+      }
+      if (timelineRows[i]) {
+        const state = timelineRows[i].querySelector(".role-stage");
+        const proof = timelineRows[i].querySelector(".role-proof");
+        const dot = timelineRows[i].querySelector(".dot");
+        if (state) state.textContent = stage;
+        if (proof) proof.textContent = stage === "UNAVAILABLE" ?
+          "No verified Check for this run" : "Verified GitHub Check";
+        if (dot) dot.className = "dot " + ({
+          WORKING:"work", DONE:"done", FAILED:"failed"
+        }[stage] || "");
+      }
+    }
+    const run = payload.run;
+    const pill = document.getElementById("run-indicator");
+    if (pill) {
+      pill.className = "run-pill";
+      if (run && run.active) {pill.classList.add("active");pill.textContent = "● DESK RUN IN PROGRESS";}
+      else if (run && run.expired) {pill.classList.add("stale");pill.textContent = "● RUN STATUS STALE";}
+      else if (run && run.queued) pill.textContent = "● RESEARCH QUEUED";
+      else if (run && run.conclusion === "success") pill.textContent = "● LAST RESEARCH RUN COMPLETED";
+      else if (run && run.conclusion === "failure") {
+        pill.classList.add("failed");pill.textContent = "● LAST RESEARCH RUN FAILED";
+      } else pill.textContent = "○ LIVE RUN STATUS UNAVAILABLE";
+    }
+    if (payload.research) {
+      const r = payload.research;
+      put("research-consensus", typeof r.consensus === "string" ? r.consensus.replaceAll("_", " ") : "UNAVAILABLE");
+      put("research-decision", typeof r.decision === "string" ? r.decision : "No validated research");
+      put("research-provider", typeof r.provider === "string" ? r.provider.toUpperCase() : "N/A");
+      put("research-date", typeof r.as_of === "string" ?
+        r.as_of + (r.stale ? " · STALE" : "") : "N/A");
+    }
+    put("verified-count", Number.isInteger(payload.verified_count) &&
+      payload.source === "VERIFIED" ? payload.verified_count + " / 7 verified" : "0 / 7 verified");
+    if (statusLabel) {
+      const label = typeof payload.checked_at === "string" ?
+        payload.checked_at.slice(0, 19).replace("T", " ") + " UTC" : "unknown time";
+      statusLabel.textContent = payload.source === "VERIFIED" ?
+        "GitHub snapshot: " + label + " · polled (not real-time streaming)" :
+        "Partial GitHub status · unverified roles";
+    }
+    pick(selected);
+    return Number.isInteger(payload.refresh_after_seconds) ?
+      payload.refresh_after_seconds : 120;
+  }
+  async function updateStatus() {
+    if (fetching) return;
+    if (document.hidden) {scheduleStatus(90);return;}
+    fetching = true;
+    let interval = 75;
+    try {
+      const response = await window.fetch("/office/status", {
+        method: "GET", credentials: "same-origin", cache: "no-store",
+        headers: {"Accept": "application/json"}
+      });
+      if (!response.ok) throw new Error("Unverified status response");
+      interval = applyStatus(await response.json());
+    } catch (_) {
+      markUnverified();
+    } finally {
+      fetching = false;
+      scheduleStatus(interval);
+    }
+  }
   buttons.forEach((button,i)=>button.addEventListener("click",()=>{pick(i);center(i);}));
   canvas.addEventListener("click",ev=>{
     const r=canvas.getBoundingClientRect();
@@ -325,8 +462,11 @@
   zoomOut.addEventListener("click",()=>resizeZoom(Math.round((zoom-.1)*10)/10));
   document.addEventListener("visibilitychange",()=>{
     visible=!document.hidden;if(!visible)resetWalk();last=0;
+    if(visible) scheduleStatus(20);
   });
   if(reduced.addEventListener)reduced.addEventListener("change",syncMotion);
   pick(0);syncMotion();
+  // Initial HTML is already a server snapshot. Refresh without page reload.
+  scheduleStatus(30);
   window.requestAnimationFrame(render);
 })();
