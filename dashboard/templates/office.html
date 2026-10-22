@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-{% if run and (run.active or run.queued) %}<meta http-equiv="refresh" content="30">{% endif %}
 <title>Stonks AgentOffice — Seven Specialist Research Floor</title>
 <style>
 :root{color-scheme:dark;--bg:#0a0d18;--panel:#13192b;--panel2:#1b2338;--stroke:#36425d;--paper:#e4e9f5;--muted:#a4b0c9;--teal:#71ecc4;--gold:#ffd388;--red:#ff8992}
@@ -51,7 +50,7 @@ h1{font-size:clamp(26px,2.8vw,42px);letter-spacing:-.055em;line-height:1.1;margi
 <nav class="topnav"><a href="/">← PORTFOLIO</a><a href="/office">REFRESH FLOOR</a>{% if run %}<a href="{{run.run_url}}" rel="noreferrer">GITHUB RUN ↗</a>{% endif %}<span class="tag">PRIVATE / READ-ONLY</span></nav>
 </header>
 <div class="heading"><div><div class="eyebrow">LIVE OBSERVABILITY · SEVEN RESEARCH SPECIALISTS</div><h1>The Agent Office<span style="color:#84e4bb">.</span></h1><p>Walk the research floor, inspect each specialist and their last verified work. Character movement and coffee breaks are decorative — only GitHub Checks establish actual model activity.</p></div>
-<div class="run-pill {% if run and run.active %}active{% elif run and run.expired %}stale{% elif run and run.conclusion == 'failure' %}failed{% endif %}">{% if run and run.active %}● DESK RUN IN PROGRESS{% elif run and run.expired %}● RUN STATUS STALE{% elif run and run.queued %}● RESEARCH QUEUED{% elif run and run.conclusion == 'success' %}● LAST RESEARCH RUN COMPLETED{% elif run and run.conclusion == 'failure' %}● LAST RESEARCH RUN FAILED{% else %}○ LIVE RUN STATUS UNAVAILABLE{% endif %}</div></div>
+<div id="run-indicator" class="run-pill {% if run and run.active %}active{% elif run and run.expired %}stale{% elif run and run.conclusion == 'failure' %}failed{% endif %}">{% if run and run.active %}● DESK RUN IN PROGRESS{% elif run and run.expired %}● RUN STATUS STALE{% elif run and run.queued %}● RESEARCH QUEUED{% elif run and run.conclusion == 'success' %}● LAST RESEARCH RUN COMPLETED{% elif run and run.conclusion == 'failure' %}● LAST RESEARCH RUN FAILED{% else %}○ LIVE RUN STATUS UNAVAILABLE{% endif %}</div></div>
 <div class="workspace">
 <aside class="side left" aria-label="Seven research specialists">
 <section class="panel"><div class="panelhead">▦ SPECIALIST ROSTER <span class="pill">07/07</span></div><div class="agent-list" id="agent-roster">
@@ -59,8 +58,8 @@ h1{font-size:clamp(26px,2.8vw,42px);letter-spacing:-.055em;line-height:1.1;margi
 <button type="button" class="agent-btn{% if loop.first %} chosen{% endif %}" style="--agent:{{w.color}}" data-agent="{{loop.index0}}" data-name="{{w.name}}" data-role="{{w.title}}" data-task="{{w.task}}" data-detail="{{w.detail}}" data-color="{{w.color}}" data-stage="{{w.stage or 'UNAVAILABLE'}}" data-action="{{w.vote.action if w.vote else 'UNAVAILABLE'}}" data-symbol="{{w.vote.symbol if w.vote else ''}}" data-confidence="{{w.vote.confidence if w.vote else ''}}" aria-pressed="{{'true' if loop.first else 'false'}}"><span class="agent-icon">{{w.name[0]}}</span><span class="agent-text"><strong>{{w.name}}</strong><small>{{w.title}}</small></span><span class="state {% if w.stage == 'WORKING' %}work{% elif w.stage == 'DONE' %}done{% elif w.stage == 'FAILED' %}failed{% elif w.stage == 'STALE' %}stale{% endif %}">{{w.stage or 'N/A'}}</span></button>
 {% endfor %}
 </div></section>
-<section class="panel"><div class="panelhead">⌁ MARKET OVERVIEW</div><div class="inside"><div class="eyebrow">Latest research consensus</div><div style="font-weight:900;font-size:19px;margin:8px 0">{{agent.consensus|replace('_',' ') if agent else 'UNAVAILABLE'}}</div>
-<p class="note">{{agent.decision if agent else 'No validated seven-specialist report available.'}}</p><div class="metric"><span>Provider</span><strong>{{agent.provider|upper if agent else 'N/A'}}</strong></div><div class="metric"><span>Research date</span><strong>{{agent.as_of if agent else 'N/A'}}{% if agent and agent.stale %} · STALE{% endif %}</strong></div><div class="metric"><span>Role Checks</span><strong>{{checks|length}} / 7 verified</strong></div></div></section>
+<section class="panel"><div class="panelhead">⌁ MARKET OVERVIEW</div><div class="inside"><div class="eyebrow">Latest research consensus</div><div id="research-consensus" style="font-weight:900;font-size:19px;margin:8px 0">{{agent.consensus|replace('_',' ') if agent else 'UNAVAILABLE'}}</div>
+<p id="research-decision" class="note">{{agent.decision if agent else 'No validated seven-specialist report available.'}}</p><div class="metric"><span>Provider</span><strong id="research-provider">{{agent.provider|upper if agent else 'N/A'}}</strong></div><div class="metric"><span>Research date</span><strong id="research-date">{{agent.as_of if agent else 'N/A'}}{% if agent and agent.stale %} · STALE{% endif %}</strong></div><div class="metric"><span>Role Checks</span><strong id="verified-count">{{checks|length}} / 7 verified</strong></div></div></section>
 </aside>
 <section class="panel officebox" aria-label="Interactive pixel-art virtual agent office">
 <div class="toolbar"><div class="title">▣ STONKS HQ / FLOOR 01</div><div class="toolbuttons">
@@ -70,7 +69,7 @@ h1{font-size:clamp(26px,2.8vw,42px);letter-spacing:-.055em;line-height:1.1;margi
 </div></div>
 <div class="canvas-wrap" id="world-viewport" tabindex="0" aria-label="Scroll horizontally to explore the illustrated research office"><canvas id="office-world" width="1152" height="704" role="img" aria-label="Seven pixel-art specialists at desks with a meeting room, lounge, and coffee station"></canvas></div>
 <div class="legend"><span>● <b>GREEN</b> verified active role</span><span>● DONE / FAILED / STALE from GitHub Checks</span><span>◌ WANDERING IS AMBIENT ONLY</span><span>Click character or select from roster</span></div>
-<div class="controls-help">Camera: click a sprite or choose a specialist · Mobile: swipe the floor · All research comes from public sanitized GitHub telemetry, not the animation.</div>
+<div class="controls-help">Camera: click a sprite or choose a specialist · Mobile: swipe the floor · Verified statuses are polled, not streamed. Brief agent calls may finish between checks. <strong id="live-connection" aria-live="polite">Connecting to verified status…</strong></div>
 </section>
 <aside class="side right">
 <section class="panel" id="agent-inspector" aria-label="Selected agent details"><div class="panelhead">◎ AGENT INSPECTOR <span class="pill" id="inspector-number">01/07</span></div><div class="inside">
@@ -82,8 +81,8 @@ h1{font-size:clamp(26px,2.8vw,42px);letter-spacing:-.055em;line-height:1.1;margi
 <p class="note" id="agent-provenance">Role status comes from GitHub Checks for the selected workflow. Missing means unverified, not idle.</p>
 </div></section>
 <section class="panel"><div class="panelhead">▤ VERIFIED ACTIVITY <span class="pill">LATEST RUN</span></div>
-<div class="inside"><div class="note">This log shows recorded per-role states, not fabricated movement or conversations.</div><ul class="timeline">
-{% for w in workers %}<li><span class="dot {% if w.stage == 'WORKING' %}work{% elif w.stage == 'DONE' %}done{% elif w.stage == 'FAILED' %}failed{% endif %}"></span><div><strong>{{w.name}}</strong> · {{w.stage or 'UNAVAILABLE'}}<small>{{w.title}} · {% if w.stage %}GitHub Check{% else %}No verified Check for this run{% endif %}</small></div></li>{% endfor %}
+<div class="inside"><div class="note">This log shows recorded per-role states, not fabricated movement or conversations.</div><ul class="timeline" id="verified-timeline">
+{% for w in workers %}<li data-role="{{w.title}}"><span class="dot {% if w.stage == 'WORKING' %}work{% elif w.stage == 'DONE' %}done{% elif w.stage == 'FAILED' %}failed{% endif %}"></span><div><strong>{{w.name}}</strong> · <span class="role-stage">{{w.stage or 'UNAVAILABLE'}}</span><small>{{w.title}} · <span class="role-proof">{% if w.stage %}GitHub Check{% else %}No verified Check for this run{% endif %}</span></small></div></li>{% endfor %}
 </ul>{% if run %}<p><a href="{{run.run_url}}">Inspect GitHub workflow ↗</a></p>{% endif %}</div></section>
 </aside></div>
 <div class="foot"><div class="panel"><h3>RESEARCH ONLY</h3><p>The roster is fixed to seven approved specialist roles. This UI cannot assign research, place an order, or change trading strategy.</p></div><div class="panel"><h3>VIRTUAL PAPER LEDGER</h3><p>Independent simulated equity: <strong>{{agent.virtual_equity if agent else 'Unavailable'}}</strong>. Simulated return: {{agent.virtual_return if agent else 'Unavailable'}}. These are not broker fills.</p></div><div class="panel"><h3>ART & ATTRIBUTION</h3><p>Pixel characters adapted from <a href="https://github.com/harishkotra/agent-office" rel="noreferrer">AgentOffice</a> (MIT), with inspiration from Pixel Agents. Server-side research and IAP protection remain Stonks.</p></div></div>
