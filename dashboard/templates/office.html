@@ -38,6 +38,11 @@ h1{font-size:clamp(26px,2.8vw,42px);letter-spacing:-.055em;line-height:1.1;margi
 .vote{font-size:19px;font-weight:900;color:var(--gold);letter-spacing:-.02em}.sub{color:#a8b6d0;font-size:11px;line-height:1.5}
 .timeline{margin:0;padding:0;list-style:none}.timeline li{display:flex;gap:9px;padding:10px 0;border-bottom:1px dashed #34415a;font-size:11px;line-height:1.4}.timeline li:last-child{border:0}.dot{width:9px;height:9px;flex:none;margin-top:3px;background:#5b7083;border-radius:50%}.dot.done{background:#65d7ad}.dot.failed{background:#fa8992}.dot.work{background:#8cf9cd}.timeline small{display:block;color:#829ab5;font-size:10px;margin-top:3px}
 .foot{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding:0 14px 28px}.foot .panel{padding:15px 18px}.foot h3{font-size:11px;letter-spacing:.08em;margin:0 0 8px}.foot p{font-size:11px;line-height:1.6;color:#adbbcb;margin:0}
+.dialogue-entry{display:flex;gap:8px;align-items:flex-start;padding:10px 0;border-bottom:1px dashed #34415a}
+.dialogue-entry .avatar{flex:none;width:28px;height:28px;display:grid;place-items:center;background:#5f7a92;color:#081a29;font:900 12px monospace;border:2px solid #38485b}
+.dialogue-entry .content{flex:1;min-width:0}.dialogue-entry strong{font-size:11px;color:#b2f4d5}
+.dialogue-entry p{font-size:11px;line-height:1.5;color:#e0e6ef;margin:5px 0;overflow-wrap:anywhere}
+.dialogue-entry small{font-size:10px;color:#8ea5b9}
 .controls-help{padding:8px 14px;font-size:10px;color:#8ca7b4;background:#111b2e}
 @media(max-width:1350px){.workspace{grid-template-columns:200px minmax(0,1fr) 245px}.agent-btn{padding:7px 5px}.agent-icon{width:27px;height:27px}}
 @media(max-width:1050px){.workspace{grid-template-columns:210px minmax(0,1fr)}.side.right{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}.foot{grid-template-columns:1fr 1fr}}
@@ -72,6 +77,14 @@ h1{font-size:clamp(26px,2.8vw,42px);letter-spacing:-.055em;line-height:1.1;margi
 <div class="controls-help">Camera: click a sprite or choose a specialist · Mobile: swipe the floor · Verified statuses are polled, not streamed. Brief agent calls may finish between checks. <strong id="live-connection" aria-live="polite">Connecting to verified status…</strong></div>
 </section>
 <aside class="side right">
+<section class="panel" id="office-dialogue-panel" aria-label="Verified ongoing agent conversations">
+<div class="panelhead">◉ ONGOING DESK CHAT <span class="pill" id="conversation-label">HOURLY / LIVE SNAPSHOTS</span></div>
+<div class="inside"><p class="note">Actual Gemini-generated specialist replies, persisted across browser sessions. Two attempted replies each UTC hour, maximum 48 calls per UTC day. Not a continuous stream or trading instruction.</p>
+<div id="conversation-status" class="eyebrow">Waiting for verified dialogue feed</div>
+<ol id="conversation-feed" aria-live="polite" aria-label="Recent published research dialogue" style="margin:9px 0 0;padding:0;list-style:none;max-height:310px;overflow:auto">
+<li class="note">No completed autonomous messages have been verified yet.</li>
+</ol></div>
+</section>
 <section class="panel" id="agent-inspector" aria-label="Selected agent details"><div class="panelhead">◎ AGENT INSPECTOR <span class="pill" id="inspector-number">01/07</span></div><div class="inside">
 <div class="detail-portrait"><div class="face" id="agent-avatar">M</div><div><h2 id="agent-name">Maya</h2><small id="agent-role">Market Analyst</small></div></div>
 <hr class="rule"><div class="eyebrow">Assigned specialty</div><p class="note" id="agent-task">Studies market regime</p><p class="sub" id="agent-detail">Market breadth · trend</p>
