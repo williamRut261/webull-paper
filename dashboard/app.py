@@ -7,6 +7,7 @@ Do not deploy with anonymous access or without Cloud Run IAP.
 from datetime import datetime, timezone
 import hashlib
 import hmac
+import logging
 import math
 import os
 import re
@@ -118,26 +119,58 @@ def normalize_history(raw):
     return result
 
 
+def _read_stage(stage, operation, *, optional=False):
+    """Log only the stage and exception class; never broker data or exception text."""
+    try:
+        return operation()
+    except Exception as error:
+        log = app.logger.warning if optional else app.logger.error
+        log(
+            "webull_sandbox_dashboard_read_failed stage=%s exception_type=%s",
+            stage, type(error).__name__,
+        )
+        raise
+
+
 def read_snapshot(trade, expected_pin, index="0"):
     """Get-only broker calls against a verified sandbox account."""
-    account_id = choose_account(
-        verified(trade.account_v2.get_account_list(), "accounts"),
-        index, expected_pin,
+    accounts = _read_stage(
+        "account_list",
+        lambda: verified(trade.account_v2.get_account_list(), "accounts"),
     )
-    balance = verified(trade.account_v2.get_account_balance(account_id), "balance")
-    if not isinstance(balance, dict):
-        raise RuntimeError("Unexpected balance response")
-    equity = amount(balance.get("total_net_liquidation_value"))
-    cash = amount(balance.get("total_cash_balance"))
-    if equity is None or cash is None:
-        raise RuntimeError("Sandbox equity or cash unavailable")
-    positions = normalize_positions(
-        verified(trade.account_v2.get_account_position(account_id), "positions")
+    account_id = _read_stage(
+        "account_verification",
+        lambda: choose_account(accounts, index, expected_pin),
+    )
+
+    def read_balance():
+        balance = verified(
+            trade.account_v2.get_account_balance(account_id), "balance"
+        )
+        if not isinstance(balance, dict):
+            raise RuntimeError("Unexpected balance response")
+        equity = amount(balance.get("total_net_liquidation_value"))
+        cash = amount(balance.get("total_cash_balance"))
+        if equity is None or cash is None:
+            raise RuntimeError("Sandbox equity or cash unavailable")
+        return equity, cash
+
+    equity, cash = _read_stage("account_balance", read_balance)
+    positions = _read_stage(
+        "positions",
+        lambda: normalize_positions(verified(
+            trade.account_v2.get_account_position(account_id), "positions"
+        )),
     )
     try:
-        history = normalize_history(verified(
-            trade.order_v3.get_order_history(account_id, page_size=100), "order history"
-        ))
+        history = _read_stage(
+            "order_history",
+            lambda: normalize_history(verified(
+                trade.order_v3.get_order_history(account_id, page_size=100),
+                "order history",
+            )),
+            optional=True,
+        )
         history_note = "Latest available 100 orders at most; not a full-history guarantee."
     except Exception:
         history, history_note = [], "Order history unavailable; no history is inferred."
@@ -148,7 +181,6 @@ def read_snapshot(trade, expected_pin, index="0"):
         "as_of": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "source": "Verified Webull OpenAPI SANDBOX (not native paper trading)",
     }
-
 
 def sandbox_trade_client():
     from webull.core.client import ApiClient
@@ -228,8 +260,9 @@ This page cannot place, cancel or modify trades.</p>
 def index():
     authorized_user()
     try:
+        trade = _read_stage("client_initialization", sandbox_trade_client)
         snapshot = read_snapshot(
-            sandbox_trade_client(),
+            trade,
             os.getenv("WEBULL_PAPER_ACCOUNT_SHA256", ""),
             os.getenv("WEBULL_PAPER_ACCOUNT_INDEX", "0"),
         )
