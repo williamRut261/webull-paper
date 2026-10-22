@@ -78,11 +78,12 @@ class OfficeConversationTests(unittest.TestCase):
         self.assertEqual(self.state["messages"][2]["role"], ROLES[2])
 
     def test_memory_trim_is_bounded(self):
+        start = self.now.replace(hour=0)
         for h in range(24):
-            self.session(self.now + timedelta(hours=h))
+            self.session(start + timedelta(hours=h))
         self.assertEqual(self.state["calls_today"], 48)
         self.assertEqual(len(self.state["messages"]), 48)
-        self.session(self.now + timedelta(days=1))
+        self.session(start + timedelta(days=1))
         self.assertEqual(len(self.state["messages"]), 50)
         self.state["messages"] = self.state["messages"][-MAX_MESSAGES:]
         self.assertLessEqual(len(self.state["messages"]), MAX_MESSAGES)
