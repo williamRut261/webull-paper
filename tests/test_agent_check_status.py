@@ -46,7 +46,7 @@ class PerAgentTelemetryTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "AI_OFFICE_CHECKS_ENABLED": "true", "AI_OFFICE_GITHUB_TOKEN": "dummy",
             "GITHUB_REPOSITORY": "williamRut261/webull-paper",
-            "GITHUB_SHA": "a" * 40}, clear=True):
+            "GITHUB_SHA": "a" * 40, "GITHUB_RUN_ID": "481516"}, clear=True):
             cid = publish_stage("Market Analyst", "start", opener=opener)
             self.assertEqual(cid, 12042)
             self.assertIsNone(publish_stage("Market Analyst", "success", cid, opener=opener))
@@ -54,6 +54,7 @@ class PerAgentTelemetryTests(unittest.TestCase):
         self.assertEqual([x[0] for x in calls], ["POST", "PATCH", "PATCH"])
         self.assertEqual(calls[0][2]["name"], "AI Office / Market Analyst")
         self.assertEqual(calls[0][2]["head_sha"], "a" * 40)
+        self.assertEqual(calls[0][2]["external_id"], "481516")
         self.assertEqual(calls[1][2]["conclusion"], "success")
         self.assertEqual(calls[2][2]["conclusion"], "failure")
         for _, _, payload in calls:

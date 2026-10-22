@@ -367,10 +367,6 @@ def read_agent_feed(opener=urlopen):
 
 
 # Public read-only workflow metadata, not private credentials or CI logs.
-OFFICE_RUNS_API = (
-    "https://api.github.com/repos/williamRut261/webull-paper/"
-    "actions/runs?per_page=35"
-)
 OFFICE_ROLES = (
     ("Market Analyst", "Maya", "Studies market regime", "Market breadth · trend", "#73b7fb", "a"),
     ("Technical Analyst", "Theo", "Checks price indicators", "RSI · SMA · momentum", "#a58cf1", "b"),
@@ -381,29 +377,50 @@ OFFICE_ROLES = (
     ("Trade Reviewer", "Quinn", "Challenges the trade idea", "Independent review", "#91c6cb", "g"),
 )
 
+OFFICE_RUNS_APIS = (
+    # Workflow-scoped pages are small and cannot be displaced by frequent CI
+    # pushes. The former repo-wide 35-run response exceeded its 80 KB cap.
+    "https://api.github.com/repos/williamRut261/webull-paper/"
+    "actions/workflows/ai-trading-desk.yml/runs?branch=main&per_page=1",
+    "https://api.github.com/repos/williamRut261/webull-paper/"
+    "actions/workflows/ai-desk-verify.yml/runs?branch=main&per_page=1",
+)
+OFFICE_WORKFLOW_NAMES = frozenset((
+    "AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)",
+    "One-Time Seven-Agent Provider Verification (NO BROKER)",
+))
+
 
 def read_office_run(opener=urlopen):
-    """Retrieve public GitHub Actions state, never infer agent-level progress."""
-    req = UrlRequest(
-        OFFICE_RUNS_API, headers={
+    """Read the latest exact research workflow, not unrelated repository CI."""
+    candidates, failures = [], []
+    for uri in OFFICE_RUNS_APIS:
+        req = UrlRequest(uri, headers={
             "User-Agent": "webull-paper-agent-office",
             "Accept": "application/vnd.github+json",
         })
-    with opener(req, timeout=3) as response:
-        raw = response.read(80001)
-    if len(raw) > 80000:
-        raise ValueError("Actions metadata oversized")
-    data = json.loads(raw)
-    runs = data.get("workflow_runs")
-    if not isinstance(runs, list):
-        raise ValueError("Malformed Actions metadata")
-    relevant = [r for r in runs if isinstance(r, dict) and r.get("name") in (
-        "AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)",
-        "One-Time Seven-Agent Provider Verification (NO BROKER)",
-    ) and r.get("head_branch") == "main"]
-    if not relevant:
+        try:
+            with opener(req, timeout=3) as response:
+                raw = response.read(80001)
+            if len(raw) > 80000:
+                raise ValueError("Oversized Actions metadata")
+            runs = json.loads(raw).get("workflow_runs")
+            if not isinstance(runs, list):
+                raise ValueError("Malformed Actions metadata")
+            candidates.extend(
+                row for row in runs if isinstance(row, dict)
+                and row.get("name") in OFFICE_WORKFLOW_NAMES
+                and row.get("head_branch") == "main"
+            )
+        except Exception as error:
+            failures.append(error)
+    if not candidates:
+        if failures:
+            raise failures[0]
         return None
-    latest = relevant[0]
+    latest = max(candidates, key=lambda r: (
+        str(r.get("created_at") or ""), r.get("id") if type(r.get("id")) is int else 0
+    ))
     state = str(latest.get("status", ""))[:24]
     conclusion = str(latest.get("conclusion") or "")[:24]
     if state not in ("queued", "waiting", "pending", "in_progress", "completed", "requested"):
@@ -414,39 +431,53 @@ def read_office_run(opener=urlopen):
     sha = latest.get("head_sha")
     if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
         sha = None
+    created = str(latest.get("created_at") or "")
+    expired = False
+    if state != "completed":
+        try:
+            started = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            age_seconds = (datetime.now(timezone.utc) - started).total_seconds()
+            expired = not (0 <= age_seconds <= 30 * 60)
+        except (ValueError, TypeError):
+            expired = True
     return {
         "state": state, "conclusion": conclusion, "head_sha": sha,
-        "active": state == "in_progress",
-        "queued": state in ("queued", "waiting", "pending", "requested"),
+        "run_id": run_id, "expired": expired,
+        "active": state == "in_progress" and not expired,
+        "queued": state in ("queued", "waiting", "pending", "requested") and not expired,
         "run_url": (
             "https://github.com/williamRut261/webull-paper/actions/runs/" + str(run_id)
         ),
-        "created": str(latest.get("created_at") or "")[:20],
-        "type": "Scheduled AI desk" if latest.get("name", "").startswith("AI Trading") else "Provider verification",
+        "created": created[:20],
+        "type": ("Scheduled AI desk" if latest.get("name", "").startswith("AI Trading")
+                 else "Provider verification"),
     }
 
 
-def read_office_role_checks(sha, opener=urlopen):
-    """Read only fixed-name, public GitHub Check runs for exact workflow SHA.
+def read_office_role_checks(sha, opener=urlopen, run_id=None, run_active=True):
+    """Only trusted role checks, attached to the selected workflow run.
 
-    No user-created text, broker details, LLM content or arbitrary links are
-    copied into the dashboard. Unavailable checks produce empty states.
+    The run ID prevents an old Check on the same SHA being interpreted as
+    current. A never-finished Check is not working once its workflow ends.
+    Missing/unrecognized events remain unavailable, never invented.
     """
     if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return {}
+    if run_id is not None and (type(run_id) is not int or run_id <= 0):
         return {}
     uri = ("https://api.github.com/repos/williamRut261/webull-paper/"
            "commits/" + sha + "/check-runs?per_page=100")
     req = UrlRequest(uri, headers={"User-Agent": "webull-paper-agent-office",
                                    "Accept": "application/vnd.github+json"})
     with opener(req, timeout=3) as response:
-        raw = response.read(80001)
-    if len(raw) > 80000:
+        raw = response.read(240001)
+    if len(raw) > 240000:
         raise ValueError("Oversized role metadata")
     runs = json.loads(raw).get("check_runs")
     if not isinstance(runs, list):
         raise ValueError("Malformed role check states")
     names = set(AGENT_ROLES)
-    statuses = {}
+    newest = {}
     for item in runs:
         if not isinstance(item, dict):
             continue
@@ -456,23 +487,26 @@ def read_office_role_checks(sha, opener=urlopen):
         role = name[len("AI Office / "):]
         if role not in names:
             continue
+        if run_id is not None and item.get("external_id") != str(run_id):
+            continue
         status = item.get("status")
         conclusion = item.get("conclusion")
         if status == "in_progress":
-            state = "WORKING"
+            state = "WORKING" if run_active else "STALE"
         elif status == "completed" and conclusion == "success":
             state = "DONE"
         elif status == "completed" and conclusion in ("failure", "timed_out", "cancelled"):
             state = "FAILED"
         elif status == "queued":
-            state = "QUEUED"
+            state = "QUEUED" if run_active else "STALE"
         else:
             continue
-        # Most recent record wins if manually rerun for same SHA.
-        if role not in statuses:
-            statuses[role] = state
-    return statuses
-
+        # Choose the newest event on an identical SHA if it was retried.
+        sort_key = (str(item.get("started_at") or ""),
+                    item.get("id") if type(item.get("id")) is int else 0)
+        if role not in newest or sort_key > newest[role][0]:
+            newest[role] = (sort_key, state)
+    return {role: value[1] for role, value in newest.items()}
 
 # Illustrated office markup is packaged as a standalone Jinja template.
 
@@ -519,7 +553,10 @@ def office():
             "office_action_status_unavailable exception_type=%s", type(error).__name__)
         run = None
     try:
-        checks = read_office_role_checks(run.get("head_sha")) if run else {}
+        checks = read_office_role_checks(
+            run.get("head_sha"), run_id=run.get("run_id"),
+            run_active=run.get("active", False)
+        ) if run else {}
     except Exception as error:
         app.logger.warning(
             "office_role_status_unavailable exception_type=%s", type(error).__name__)

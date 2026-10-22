@@ -1,5 +1,6 @@
 """Offline tests for visual 7-agent office, strict source grounding and IAP."""
 import json
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import unittest
@@ -48,7 +49,7 @@ def run_response(status, conclusion=None):
         "workflow_runs": [{
             "name": "AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)",
             "id": 12345, "head_branch": "main", "status": status,
-            "conclusion": conclusion, "created_at": "2026-10-22T23:35:01Z",
+            "conclusion": conclusion, "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }]
     }
 
@@ -101,6 +102,58 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertEqual(read_office_role_checks(None, opener=opener), {})
         self.assertEqual(read_office_role_checks("../../bad", opener=opener), {})
 
+    def test_research_lookup_is_workflow_scoped_not_displaced_by_ci(self):
+        visited = []
+        def opener(req, timeout):
+            visited.append(req.full_url)
+            self.assertIn("/actions/workflows/", req.full_url)
+            self.assertIn("per_page=1", req.full_url)
+            if "ai-trading-desk.yml" in req.full_url:
+                return Response(json.dumps(run_response("completed", "success")).encode())
+            other = run_response("completed", "failure")
+            other["workflow_runs"][0]["name"] = (
+                "One-Time Seven-Agent Provider Verification (NO BROKER)")
+            other["workflow_runs"][0]["created_at"] = "2025-01-01T00:00:00Z"
+            return Response(json.dumps(other).encode())
+        result = read_office_run(opener=opener)
+        self.assertEqual(result["conclusion"], "success")
+        self.assertEqual(result["run_id"], 12345)
+        self.assertEqual(len(visited), 2)
+
+    def test_stale_workflow_never_shows_realtime_working(self):
+        old = run_response("in_progress")
+        old["workflow_runs"][0]["created_at"] = "2025-01-01T00:00:00Z"
+        result = read_office_run(
+            opener=lambda req, timeout: Response(json.dumps(old).encode()))
+        self.assertTrue(result["expired"])
+        self.assertFalse(result["active"])
+        self.assertFalse(result["queued"])
+
+    def test_role_checks_require_selected_run_and_stale_incomplete_work(self):
+        sha = "b" * 40
+        data = {"check_runs": [
+            {"id": 99, "name": "AI Office / Market Analyst", "external_id": "11",
+             "status": "in_progress", "started_at": "2026-10-22T09:00:00Z"},
+            {"id": 12, "name": "AI Office / Market Analyst", "external_id": "12",
+             "status": "completed", "conclusion": "success",
+             "started_at": "2026-10-22T10:00:00Z"},
+            {"id": 13, "name": "AI Office / Technical Analyst", "external_id": "12",
+             "status": "in_progress", "started_at": "2026-10-22T10:03:00Z"},
+            {"id": 14, "name": "AI Office / Risk Manager", "external_id": "12",
+             "status": "completed", "conclusion": "failure",
+             "started_at": "2026-10-22T10:04:00Z"},
+            {"id": 15, "name": "AI Office / Desk Lead", "status": "in_progress"},
+        ]}
+        def opener(req, timeout):
+            return Response(json.dumps(data).encode())
+        states = read_office_role_checks(sha, opener=opener,
+                                          run_id=12, run_active=False)
+        self.assertEqual(states, {
+            "Market Analyst": "DONE", "Technical Analyst": "STALE",
+            "Risk Manager": "FAILED"})
+        self.assertNotIn("Desk Lead", states)
+        self.assertEqual(read_office_role_checks(sha, opener=opener, run_id=-1), {})
+
     def test_completed_and_queued_are_not_mistaken_for_live_execution(self):
         for state, expected in (("completed", False), ("queued", False), ("in_progress", True)):
             with self.subTest(state=state):
@@ -140,7 +193,7 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b"Market Analyst", response.data)
                     self.assertIn(b"Trade Reviewer", response.data)
                     self.assertIn(b"DESK RUN IN PROGRESS", response.data)
-                    self.assertIn(b"Individual role stages come from", response.data)
+                    self.assertIn(b"Only an active, run-matched GitHub Check", response.data)
                     self.assertEqual(response.data.count(b'class="pod '), 7)
                     self.assertIn(b'id="motion"', response.data)
                     self.assertIn(b"prefers-reduced-motion", response.data)
@@ -167,7 +220,7 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertIn("agent-walker", source)
         self.assertIn("@keyframes step-leg", source)
         self.assertIn('aria-label="Animated virtual research office"', source)
-        self.assertIn("stage remains unavailable", source.lower())
+        self.assertIn("missing events remain unavailable", source.lower())
         docker = (Path(__file__).resolve().parents[1] /
                   "dashboard/Dockerfile").read_text()
         self.assertIn("COPY templates/ /app/templates/", docker)

@@ -1,5 +1,5 @@
-/* Ambient office walkers, original visualization. No broker/network APIs.
-   No walking or animation implies the real AI model is working. */
+/* Decorative office walks only: no broker, model, or network activity.
+   An agent's verified working state comes exclusively from GitHub Checks. */
 (() => {
   "use strict";
   const room = document.querySelector(".room");
@@ -12,7 +12,8 @@
   const active = room.getAttribute("data-workflow-active") === "true";
   const canWalk = () => motion.checked && !reduced.matches &&
     !active && document.visibilityState === "visible";
-  let occupied = false, scheduled = null;
+  let occupied = false, scheduled = null, generation = 0;
+  let walker = null, wanderingPod = null;
 
   function point(pod) {
     return {x: pod.offsetLeft + 19, y: pod.offsetTop + 71};
@@ -29,48 +30,72 @@
     return el;
   }
   const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms));
-  async function move(el, x, y, ms) {
+  const valid = (token) => token === generation && canWalk();
+
+  // Stop immediately on pause, reduced-motion changes, or hidden tab.
+  // Older async steps cannot resurrect a removed walker.
+  function stop() {
+    generation += 1;
+    if (scheduled !== null) window.clearTimeout(scheduled);
+    scheduled = null;
+    if (walker) walker.remove();
+    if (wanderingPod) wanderingPod.classList.remove("is-wandering");
+    walker = null;
+    wanderingPod = null;
+    occupied = false;
+  }
+  async function move(el, x, y, ms, token) {
+    if (!valid(token)) return false;
     el.style.transitionDuration = ms + "ms";
     el.style.left = x + "px";
     el.style.top = y + "px";
     await wait(ms + 80);
+    return valid(token);
   }
   async function visit() {
     if (occupied || !canWalk()) return;
     occupied = true;
+    const token = ++generation;
     const i = Math.floor(Math.random() * pods.length);
     const from = pods[i];
     const to = pods[(i + 2 + Math.floor(Math.random() * 4)) % pods.length];
     const origin = point(from);
     const target = point(to);
-    const walker = makeWalker(from);
-    walker.style.left = origin.x + "px";
-    walker.style.top = origin.y + "px";
-    room.appendChild(walker);
+    const el = makeWalker(from);
+    walker = el;
+    wanderingPod = from;
+    el.style.left = origin.x + "px";
+    el.style.top = origin.y + "px";
+    room.appendChild(el);
     from.classList.add("is-wandering");
     try {
       await wait(100);
-      const aisle = 443;
-      await move(walker, origin.x, aisle, 950);
-      await move(walker, target.x, aisle, Math.max(800, Math.abs(target.x - origin.x) * 2.5));
-      await move(walker, target.x, target.y, 950);
-      walker.classList.remove("is-walking");
+      if (!await move(el, origin.x, 443, 950, token)) return;
+      if (!await move(el, target.x, 443,
+          Math.max(800, Math.abs(target.x - origin.x) * 2.5), token)) return;
+      if (!await move(el, target.x, target.y, 950, token)) return;
+      el.classList.remove("is-walking");
       await wait(1300);
-      walker.classList.add("is-walking");
-      await move(walker, target.x, aisle, 950);
-      await move(walker, origin.x, aisle, Math.max(800, Math.abs(origin.x - target.x) * 2.5));
-      await move(walker, origin.x, origin.y, 950);
+      if (!valid(token)) return;
+      el.classList.add("is-walking");
+      if (!await move(el, target.x, 443, 950, token)) return;
+      if (!await move(el, origin.x, 443,
+          Math.max(800, Math.abs(origin.x - target.x) * 2.5), token)) return;
+      await move(el, origin.x, origin.y, 950, token);
     } finally {
-      walker.remove();
-      from.classList.remove("is-wandering");
-      occupied = false;
-      queue();
+      if (generation === token) {
+        stop();
+        queue();
+      }
     }
   }
   function queue() {
+    if (!canWalk()) {
+      stop();
+      return;
+    }
+    if (occupied) return;
     if (scheduled !== null) window.clearTimeout(scheduled);
-    scheduled = null;
-    if (!canWalk()) return;
     scheduled = window.setTimeout(() => {
       scheduled = null;
       void visit();

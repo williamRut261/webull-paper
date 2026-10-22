@@ -25,8 +25,10 @@ def publish_stage(role, event, check_id=None, opener=urlopen):
         return None
     token = os.environ.get("AI_OFFICE_GITHUB_TOKEN", "")
     sha = os.environ.get("GITHUB_SHA", "")
+    workflow_id = os.environ.get("GITHUB_RUN_ID", "")
     if (os.environ.get("GITHUB_REPOSITORY") != REPOSITORY or not token
-            or not re.fullmatch(r"[0-9a-f]{40}", sha)):
+            or not re.fullmatch(r"[0-9a-f]{40}", sha)
+            or not re.fullmatch(r"[1-9][0-9]{0,19}", workflow_id)):
         return None
     if event != "start" and (type(check_id) is not int or check_id <= 0):
         return None
@@ -35,6 +37,7 @@ def publish_stage(role, event, check_id=None, opener=urlopen):
         uri = "https://api.github.com/repos/" + REPOSITORY + "/check-runs"
         method = "POST"
         payload = {"name": CHECK_PREFIX + role, "head_sha": sha,
+                   "external_id": workflow_id,
                    "status": "in_progress", "started_at": now,
                    "output": {"title": "Research role running",
                               "summary": "Model call started; no trading permissions."}}

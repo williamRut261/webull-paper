@@ -171,6 +171,8 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
 .pod.is-running .pod-led{background:#79ffc1;box-shadow:0 0 12px #78ffbb;animation:beacon 1.2s infinite}
 .pod.is-failed .pod-led{background:#ff7378;box-shadow:0 0 9px #ff6666}
 .pod.is-done .pod-led{background:#66d1a5;box-shadow:0 0 5px #66d1a555}
+.pod.is-stale .pod-led{background:#d5ac66;box-shadow:0 0 7px #e5aa6855}
+.pod.is-stale .bubble{background:#ffe3b1;color:#47331b}
 </style>
 </head>
 <body><main class="page">
@@ -185,9 +187,9 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
  <p>Seven AI specialists. One trading desk. Watch their little world come alive, inspect individual tasks, and follow the most recent verified research. This is the visual layer; the broker's safety rules remain separate.</p>
  </div>
  <div class="status">
- <div class="status-pill {% if run and run.active %}active{% elif run and run.conclusion == 'success' %}ok{% elif run and run.conclusion == 'failure' %}fail{% endif %}">
+ <div class="status-pill {% if run and run.active %}active{% elif run and run.expired %}fail{% elif run and run.conclusion == 'success' %}ok{% elif run and run.conclusion == 'failure' %}fail{% endif %}">
  <span class="status-light"></span>
- {% if run and run.active %}DESK RUN IN PROGRESS{% elif run and run.queued %}RUN QUEUED{% elif run and run.conclusion == 'success' %}LAST RUN COMPLETED{% elif run and run.conclusion == 'failure' %}LAST RUN FAILED{% else %}LIVE RUN STATUS UNAVAILABLE{% endif %}
+ {% if run and run.active %}DESK RUN IN PROGRESS{% elif run and run.expired %}RUN STATUS STALE{% elif run and run.queued %}RUN QUEUED{% elif run and run.conclusion == 'success' %}LAST RUN COMPLETED{% elif run and run.conclusion == 'failure' %}LAST RUN FAILED{% else %}LIVE RUN STATUS UNAVAILABLE{% endif %}
  </div>
  <label class="motion-option"><input id="motion" type="checkbox" checked> AMBIENT MOTION</label>
  </div>
@@ -202,17 +204,17 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
  <div class="room" data-workflow-active="{{ 'true' if run and run.active else 'false' }}">
   <div class="skylight"></div><div class="skylight two"></div><div class="skylight three"></div>
   <div class="wall-sign">THE <span>ALPHA</span> DESK</div>
-  <div class="deskboard"><div class="bars"><span></span><span></span><span></span><span></span></div><p>SCANNING · MARKET</p></div>
+  <div class="deskboard"><div class="bars"><span></span><span></span><span></span><span></span></div><p>MARKET · VISUAL</p></div>
   <div class="rail"><div class="run-pipe"></div></div>
   <div class="room-label top">SECTOR A · RESEARCH PODS</div>
   <div class="carpet"></div><div class="runner-line"></div>
   {% for worker in workers %}
-   <details class="pod {% if worker.vote %}has-vote{% endif %} {% if worker.stage == 'WORKING' %}is-running{% elif worker.stage == 'FAILED' %}is-failed{% elif worker.stage == 'DONE' %}is-done{% endif %}"
+   <details class="pod {% if worker.vote %}has-vote{% endif %} {% if worker.stage == 'WORKING' %}is-running{% elif worker.stage == 'FAILED' %}is-failed{% elif worker.stage == 'DONE' %}is-done{% elif worker.stage == 'STALE' %}is-stale{% endif %}"
     style="--accent:{{worker.color}};--hair:{{worker.hair}}">
      <summary aria-label="Inspect {{worker.name}} — {{worker.title}}">
       <div class="pod-title"><div><div class="pod-name">{{worker.name}}</div>
       <div class="pod-role">{{worker.title}}</div></div><span class="pod-led"></span></div>
-      <div class="bubble">{% if worker.stage == 'WORKING' %}WORK{% elif worker.stage == 'DONE' %}DONE{% elif worker.stage == 'FAILED' %}ERROR{% elif worker.stage == 'QUEUED' %}WAIT{% elif worker.vote %}{{worker.vote.action}}{% else %}ZZZ{% endif %}</div>
+      <div class="bubble">{% if worker.stage == 'WORKING' %}WORK{% elif worker.stage == 'DONE' %}DONE{% elif worker.stage == 'FAILED' %}ERROR{% elif worker.stage == 'QUEUED' %}WAIT{% elif worker.stage == 'STALE' %}STALE{% elif worker.vote %}{{worker.vote.action}}{% else %}ZZZ{% endif %}</div>
       <div class="pod-ambient"><div class="signal-graph"></div></div>
       <div class="monitor-mast"></div>
       <div class="person"><div class="head"></div><div class="jacket"></div><span class="limb l"></span><span class="limb r"></span></div>
@@ -224,7 +226,7 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
        <p>{{worker.task}}. {{worker.detail}}.</p>
        <p>Verified latest-run stage: <strong>{{worker.stage or 'UNAVAILABLE'}}</strong>.</p>
        {% if worker.vote %}
-       <p>Last published: <strong>{{worker.vote.action}} {{worker.vote.symbol}}</strong> at {{worker.vote.confidence}} stated confidence.</p>
+       <p>Last published{% if agent and agent.stale %} (STALE){% endif %}: <strong>{{worker.vote.action}} {{worker.vote.symbol}}</strong> at {{worker.vote.confidence}} stated confidence.</p>
        {% else %}<p>No published opinion yet — awaiting validated data.</p>{% endif %}
        <small>Illustrated character movement does not establish a live per-agent action. Actual workflow state is shown above.</small>
      </div>
@@ -236,7 +238,7 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
   <div class="room-label bottom">UNIT 07 // COFFEE DELIVERY BOT · AMBIENT ONLY</div>
   <div class="floor-shadow"></div>
  </div></div>
- <div class="marquee"><span>◈ 7 AI SPECIALISTS · {% if agent %}{{agent.provider|upper}}{% else %}AWAITING DATA{% endif %}</span><span>⟶ AGENT APPROVAL → ORB SCANNER → WEBULL SANDBOX</span><span class="hint">Scroll sideways on smaller screens</span></div>
+ <div class="marquee"><span>◈ 7 AI SPECIALISTS · {% if agent %}{{agent.provider|upper}}{% else %}AWAITING DATA{% endif %}</span><span>⟶ RESEARCH (ADVISORY) · EXISTING PAPER ORB GATE</span><span class="hint">Scroll sideways on smaller screens</span></div>
  </section>
  <aside class="sidebar" aria-label="Verified system information">
   <section class="panel">
@@ -255,13 +257,13 @@ body:has(#motion:not(:checked)) .agent-walker{transition-duration:0s!important}
     <div class="panel-body">
       <div class="console">
        <div><span class="prompt">›</span> research.start</div>
-       <div><span class="prompt">›</span> provider.gemini</div>
+       <div><span class="prompt">›</span> provider.{{agent.provider if agent else 'unavailable'}}</div>
        <div><span class="prompt">›</span> seven_roles.sequence</div>
        <div class="note">  {% if run %}{{run.state}}{% if run.conclusion %} / {{run.conclusion}}{% endif %}{% else %}unknown{% endif %}</div>
        <div class="note">  {% if run %}{{run.created}} UTC{% else %}last run not accessible{% endif %}</div>
       </div>
       {% if run %}<p class="micro"><a href="{{run.run_url}}">VIEW VERIFIED GITHUB RUN ↗</a></p>{% endif %}
-      <p class="micro">During a run, the monitors glow and avatars type. Individual role stages come from signed-by-GitHub public Checks metadata when available; otherwise their stage remains unavailable. Ambient movement never signals real work.</p>
+      <p class="micro">Only an active, run-matched GitHub Check can make an avatar type. Completed/failed checks stay visible as historical states; missing events remain unavailable and abandoned runs are marked stale. Ambient movement never signals real work.</p>
     </div>
   </section>
   <section class="panel">
