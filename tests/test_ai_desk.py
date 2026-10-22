@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from research.ai_desk import ROLES, main, make_snapshot, rsi, safe_report, summarise_bars
+from research.ai_desk import ROLES, main, make_snapshot, rsi, safe_report, summarise_bars, run_agents
 
 
 def bars(length=90, days_ago=1):
@@ -26,6 +26,24 @@ class AgentDeskSafetyTests(unittest.TestCase):
     def test_seven_specialists(self):
         self.assertEqual(len(ROLES), 7)
         self.assertEqual(len(set(ROLES)), 7)
+
+    def test_seven_agent_end_to_end_chain_runs_in_order_without_broker(self):
+        order = []
+        def pretend_model(provider, model, instruction, prompt):
+            request = json.loads(prompt)
+            role = request["role"]
+            self.assertEqual(role, ROLES[len(order)])
+            self.assertEqual(len(request["earlier_opinions"]), len(order))
+            order.append(role)
+            return opinions()[role], {"input_tokens": 10, "output_tokens": 5}
+        snapshot = {"quotes": {"GDXD": {"close": 25, "as_of": "2026-10-22"}}}
+        result = run_agents(snapshot, "offline-model", requester=pretend_model)
+        self.assertEqual(tuple(order), ROLES)
+        self.assertEqual(result["status"], "RESEARCH_ONLY")
+        self.assertEqual(result["consensus"], "HYPOTHESIS_FOR_BACKTEST")
+        self.assertEqual(result["token_usage"]["input_tokens"], 70)
+        self.assertEqual(result["actual_order_count"], 0)
+        self.assertFalse(result["broker_connected"])
 
     def test_rsi_bounds_and_flat_line(self):
         self.assertEqual(rsi(list(range(1, 30))), 100.)
