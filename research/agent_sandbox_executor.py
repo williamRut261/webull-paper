@@ -122,6 +122,8 @@ def verify_order_book(trade, account_id, today):
         raw=(str(row.get("create_time") or row.get("created_at") or
                  row.get("place_time_at") or ""))
         cid=str(row.get("client_order_id") or "")
+        if not cid.startswith(CID_PREFIX):
+            raise RuntimeError("This sandbox account was used by another trader")
         if cid.startswith(CID_PREFIX+today.replace("-","")):
             raise RuntimeError("Agent order already submitted for trading date")
         if raw.startswith(today):
