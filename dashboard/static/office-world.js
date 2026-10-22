@@ -198,7 +198,7 @@
       const yy=Math.max(148,y-76);
       rect(c,x0,yy,240,48,"#0b2030");
       stroke(c,x0,yy,240,48,"#72e1bd",2);
-      const words=a.speech.split(/\\s+/).filter(Boolean);
+      const words=a.speech.split(/\s+/).filter(Boolean);
       const lines=["",""];
       for(const word of words){
         const index=lines[0].length+word.length<36?0:1;
