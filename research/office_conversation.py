@@ -182,6 +182,8 @@ def run_once(state, research, *, now=None, run_id="", requester=request_opinion,
                   " class=" + type(error).__name__, flush=True)
         else:
             publish(role, "success", check_id)
+            print("OFFICE_DIALOGUE_ROLE_OK role=" + role +
+                  " turn=" + str(state["turn_seq"]), flush=True)
     return count, "ATTEMPTED"
 
 
