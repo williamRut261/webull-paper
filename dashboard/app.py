@@ -4,7 +4,9 @@ This module has no endpoint, import, or invocation for order placement.
 Every request requires a Google-signed IAP assertion with a pinned audience.
 Do not deploy with anonymous access or without Cloud Run IAP.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
+import json
+from urllib.request import Request as UrlRequest, urlopen
 import hashlib
 import hmac
 import logging
@@ -59,7 +61,9 @@ def amount(value):
 
 
 def dollars(number):
-    return "Unavailable" if number is None else f"${number:,.2f}"
+    if number is None:
+        return "Unavailable"
+    return f"${(0.0 if abs(number) < 0.005 else number):,.2f}"
 
 
 def first_value(entry, names):
@@ -280,6 +284,87 @@ def authorized_user():
     return email
 
 
+
+# This public JSON contains ONLY sanitized market research and independent
+# VIRTUAL paper metrics. It never contains brokerage identifiers or secrets.
+AGENT_FEED = (
+    "https://raw.githubusercontent.com/williamRut261/webull-paper/"
+    "main/research/ai_desk_status.json"
+)
+AGENT_ROLES = (
+    "Market Analyst", "Technical Analyst", "News Researcher",
+    "Strategy Analyst", "Risk Manager", "Desk Lead", "Trade Reviewer",
+)
+
+
+def read_agent_feed(opener=urlopen):
+    """Best-effort advisory view. It cannot influence any broker decision."""
+    req = UrlRequest(AGENT_FEED, headers={"User-Agent": "paper-dashboard-readonly"})
+    with opener(req, timeout=3) as response:
+        raw = response.read(30001)
+    if len(raw) > 30000:
+        raise ValueError("Research feed oversized")
+    data = json.loads(raw)
+    if not isinstance(data, dict) or data.get("schema") != 1:
+        raise ValueError("Invalid research feed")
+    agents = data.get("agents")
+    if not isinstance(agents, list) or len(agents) not in (0, 7):
+        raise ValueError("Research roles incomplete")
+    if agents and [r.get("role") for r in agents] != list(AGENT_ROLES):
+        raise ValueError("Unexpected agent roles")
+    safe_rows = []
+    for row in agents:
+        if (row.get("action") not in ("BUY", "SELL", "HOLD", "NO_TRADE")
+                or not re.fullmatch(r"[A-Z0-9]{1,6}", str(row.get("symbol", "")))):
+            raise ValueError("Invalid research opinion")
+        confidence = amount(row.get("confidence"))
+        if confidence is None or confidence < 0 or confidence > 1:
+            raise ValueError("Invalid research confidence")
+        safe_rows.append({"role": row["role"], "action": row["action"],
+                          "symbol": row["symbol"], "confidence": f"{100*confidence:.0f}%"})
+    virtual = data.get("virtual_paper") if isinstance(data.get("virtual_paper"), dict) else {}
+    history = virtual.get("latest_trades")
+    if not isinstance(history, list):
+        history = []
+    trades = []
+    for trade in history[-8:]:
+        if not isinstance(trade, dict):
+            continue
+        if (trade.get("side") not in ("BUY", "SELL")
+                or not re.fullmatch(r"[A-Z0-9]{1,6}", str(trade.get("symbol", "")))):
+            continue
+        trades.append({
+            "day": str(trade.get("day", ""))[:10],
+            "symbol": trade["symbol"], "side": trade["side"],
+            "shares": str(trade.get("shares", ""))[:12],
+            "price": dollars(amount(trade.get("assumed_close"))),
+        })
+    day = str(data.get("as_of", "UNAVAILABLE"))[:10]
+    try:
+        stale = (datetime.now(timezone.utc).date() - date.fromisoformat(day)).days > 4
+    except (ValueError, TypeError):
+        stale = True
+    hypothesis = data.get("hypothesis")
+    decision = "NO EXECUTABLE AGENT DECISION"
+    if isinstance(hypothesis, dict) and hypothesis.get("action") in ("BUY", "SELL"):
+        if re.fullmatch(r"[A-Z0-9]{1,6}", str(hypothesis.get("symbol", ""))):
+            decision = "HYPOTHESIS ONLY: " + hypothesis["action"] + " " + hypothesis["symbol"]
+    pct = amount(virtual.get("cumulative_return_pct"))
+    dd = amount(virtual.get("worst_observed_drawdown_pct"))
+    return {
+        "state": str(data.get("status", "UNAVAILABLE"))[:40],
+        "provider": str(data.get("provider", "UNAVAILABLE"))[:20],
+        "as_of": day, "stale": stale,
+        "consensus": str(data.get("consensus", "NO_CONSENSUS"))[:40],
+        "decision": decision, "agents": safe_rows,
+        "virtual_equity": dollars(amount(virtual.get("current_equity"))),
+        "virtual_return": f"{pct:+.2f}%" if pct is not None else "Unavailable",
+        "virtual_drawdown": f"{dd:.2f}%" if dd is not None else "Unavailable",
+        "virtual_status": str(virtual.get("status", "UNAVAILABLE"))[:20],
+        "trades": trades,
+    }
+
+
 TEMPLATE = """
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -312,6 +397,32 @@ th{color:#bdcbe0;font-weight:500}td{font-variant-numeric:tabular-nums}
 <tr><th>Equity minus cash and broker holdings</th><td>{{ snapshot.equity_residual }}</td></tr>
 </table></div><p class="muted">{{ snapshot.balance_note }}</p></section>
 <div style="height:16px"></div>
+
+<div style="height:16px"></div>
+<section class="box"><h2>Seven-agent AI trading desk (research + virtual paper)</h2>
+<p class="muted">Not connected to Webull execution. The seven opinions are advisory,
+and $10,000 virtual trades are daily-close assumptions, not broker fills.</p>
+{% if agent %}
+<p class="muted">Status: {{ agent.state }} · Provider: {{ agent.provider }} ·
+Market data: {{ agent.as_of }}{% if agent.stale %} · STALE / UNVERIFIED{% endif %}</p>
+<p><strong>Desk outcome:</strong> {{ agent.consensus }} · {{ agent.decision }}</p>
+<div class="scroll"><table><tr><th>Specialist</th><th>Opinion</th><th>Symbol</th><th>Confidence</th></tr>
+{% for v in agent.agents %}<tr><td>{{ v.role }}</td><td>{{ v.action }}</td><td>{{ v.symbol }}</td>
+<td>{{ v.confidence }}</td></tr>
+{% else %}<tr><td colspan="4">No verified seven-agent opinions published yet.</td></tr>{% endfor %}
+</table></div>
+<p class="muted">Independent virtual paper ({{ agent.virtual_status }}) ·
+Equity: {{ agent.virtual_equity }} · Simulated return: {{ agent.virtual_return }} ·
+Worst observed drawdown: {{ agent.virtual_drawdown }}. No agent orders placed at Webull.</p>
+<div class="scroll"><table><tr><th>Virtual day</th><th>Symbol</th><th>Side</th><th>Shares</th><th>Assumed close</th></tr>
+{% for t in agent.trades %}<tr><td>{{t.day}}</td><td>{{t.symbol}}</td><td>{{t.side}}</td>
+<td>{{t.shares}}</td><td>{{t.price}}</td></tr>
+{% else %}<tr><td colspan="5">No simulated trades recorded.</td></tr>{% endfor %}
+</table></div>
+{% else %}
+<p class="muted">Agent report unavailable. No agent decisions or performance are inferred.</p>
+{% endif %}
+</section>
 <section class="box"><h2>Current positions</h2><div class="scroll"><table>
 <tr><th>Symbol</th><th>Quantity</th><th>Last price</th><th>Market value</th></tr>
 {% for p in snapshot.positions %}<tr><td>{{p.symbol}}</td><td>{{p.quantity}}</td>
@@ -344,7 +455,13 @@ def index():
     except Exception:
         # Do not disclose broker responses, account identifiers, or secret values.
         abort(502, "Sandbox data unavailable or account verification failed")
-    response = make_response(render_template_string(TEMPLATE, snapshot=snapshot))
+    try:
+        agent = read_agent_feed()
+    except Exception as error:
+        app.logger.warning(
+            "agent_public_feed_unavailable exception_type=%s", type(error).__name__)
+        agent = None
+    response = make_response(render_template_string(TEMPLATE, snapshot=snapshot, agent=agent))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "status": "NOT_YET_RUN",
+  "as_of": "UNAVAILABLE",
+  "provider": "UNAVAILABLE",
+  "consensus": "NO_CONSENSUS",
+  "hypothesis": null,
+  "agents": [],
+  "virtual_paper": {
+    "status": "ENABLED",
+    "starting_equity": 10000,
+    "current_equity": null,
+    "cumulative_return_pct": null,
+    "worst_observed_drawdown_pct": null,
+    "simulated_trades": 0,
+    "latest_trades": []
+  },
+  "actual_broker_orders_from_agents": 0,
+  "note": "Seven-agent feed not yet run. No Webull broker orders; virtual paper only."
+}

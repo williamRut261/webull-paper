@@ -2,10 +2,12 @@ name: Trader ORB + Beethoven PAPER (SANDBOX ONLY)
 on:
   workflow_dispatch:
   schedule:
-    # Stage at 09:35 ET, before the 10:25 ET entry. GitHub cron often runs
-    # late; the runner waits until entry and hard-stops at 10:40 ET.
+    # Stage at 09:05 ET, 80 minutes before the 10:25 ET entry.
+    # Prior 09:35 run started 78 minutes late and missed the window.
+    # GitHub cron remains best-effort; the runner waits until entry and
+    # hard-stops at 10:40 ET even after an extreme scheduling delay.
     # Trading remains SANDBOX only. Late dispatches never chase old signals.
-    - cron: "35 9 * * 1-5"
+    - cron: "5 9 * * 1-5"
       timezone: "America/New_York"
 permissions:
   contents: read
@@ -16,7 +18,7 @@ jobs:
   trader-paper-morning:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 95
+    timeout-minutes: 115
     env:
       PYTHONPATH: .
       WEBULL_PAPER_APP_KEY: ${{ secrets.WEBULL_PAPER_APP_KEY }}

@@ -68,16 +68,16 @@ class CombinedPaperTests(TestCase):
             morning_guard(self.now + timedelta(days=4))  # Saturday
 
     def test_github_delayed_start_stages_orb_without_late_orders(self):
-        # 09:35 staging tolerates a 30+ minute late GitHub cron start.
+        # 09:05 staging tolerates a long GitHub cron queue delay.
         self.assertEqual(
-            morning_wait_seconds(self.now.replace(hour=9, minute=35)), 50 * 60)
+            morning_wait_seconds(self.now.replace(hour=9, minute=5)), 80 * 60)
         self.assertEqual(
             morning_wait_seconds(self.now.replace(hour=10, minute=10)), 15 * 60)
         self.assertEqual(
             morning_wait_seconds(self.now.replace(hour=10, minute=25)), 0)
         self.assertEqual(
             morning_wait_seconds(self.now.replace(hour=10, minute=39)), 0)
-        for hour, minute in ((9, 34), (10, 40), (10, 54)):
+        for hour, minute in ((9, 4), (10, 40), (10, 54)):
             with self.subTest(hour=hour, minute=minute), self.assertRaisesRegex(
                     RuntimeError, "TRADER_MISSED_WINDOW"):
                 morning_wait_seconds(self.now.replace(hour=hour, minute=minute))
@@ -244,8 +244,8 @@ class CombinedPaperTests(TestCase):
         self.assertIn("WEBULL_TRADER_PAPER_ENABLED:", close_workflow)
         self.assertIn("group: webull-paper-order", open_workflow)
         self.assertIn("group: webull-paper-order", close_workflow)
-        self.assertIn('cron: "35 9 * * 1-5"', open_workflow)
-        self.assertIn("timeout-minutes: 95", open_workflow)
+        self.assertIn('cron: "5 9 * * 1-5"', open_workflow)
+        self.assertIn("timeout-minutes: 115", open_workflow)
         self.assertNotIn('cron: "20 10 * * 1-5"', open_workflow)
 
 

@@ -18,7 +18,8 @@ on:
     - cron: "35 23 * * 1-5"
 
 permissions:
-  contents: read
+  # Publish ONLY sanitized public opinions and a separate virtual paper ledger.
+  contents: write
 
 concurrency:
   group: ai-desk-research-${{ github.ref }}
@@ -26,7 +27,7 @@ concurrency:
 
 jobs:
   research:
-    if: github.event_name == 'workflow_dispatch' || vars.AI_DESK_ENABLED == 'true'
+    if: github.event_name == 'workflow_dispatch' || vars.AI_DESK_ENABLED != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 18
     env:
@@ -40,6 +41,7 @@ jobs:
       AI_DESK_CLAUDE_MODEL: ${{ vars.AI_DESK_CLAUDE_MODEL || 'claude-haiku-4-5' }}
       AI_DESK_GROK_MODEL: ${{ vars.AI_DESK_GROK_MODEL || 'grok-4.7' }}
       AI_DESK_FOCUS: ${{ inputs.focus_symbol || 'GDXD' }}
+      AI_PAPER_KILL_SWITCH: ${{ vars.AI_PAPER_KILL_SWITCH || 'false' }}
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +52,33 @@ jobs:
         run: |
           set -o pipefail
           python -m research.ai_desk --provider "$AI_DESK_PROVIDER" --symbol "$AI_DESK_FOCUS" --out out/ai-desk
+      - name: Update isolated virtual paper ledger and sanitized agent feed
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          if [ -f out/ai-desk/report.json ]; then
+            kill_arg=""
+            if [ "$AI_PAPER_KILL_SWITCH" = "true" ]; then kill_arg="--kill"; fi
+            python -m research.agent_paper \
+              --report out/ai-desk/report.json \
+              --ledger research/agent_virtual_ledger.json \
+              --status research/ai_desk_status.json $kill_arg
+          else
+            echo "No research report; previous public status remains unchanged."
+          fi
+      - name: Publish public research-only snapshot (never broker credentials)
+        if: always() && github.ref == 'refs/heads/main'
+        run: |
+          # Both files contain allowlisted agent opinions and VIRTUAL cash only.
+          # Never publish raw API responses, model prompts, secret env, or account data.
+          git add research/ai_desk_status.json research/agent_virtual_ledger.json
+          if git diff --cached --quiet; then
+            echo "No new public research snapshot"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'research: update sanitized seven-agent virtual paper snapshot [skip ci]'
+            git push origin HEAD:main
+          fi
       - name: Write summary
         if: always()
         run: |

@@ -34,7 +34,7 @@ from webull_paper.automatic import (
 STATE_DIR = Path("state/trader-paper")
 # Stage before the intended entry and tolerate delayed GitHub cron dispatches.
 # Neither staging nor waiting may send an order; morning_guard checks every write.
-SCANNER_STAGE_MINUTE = 9 * 60 + 35
+SCANNER_STAGE_MINUTE = 9 * 60 + 5
 SCANNER_ENTRY_MINUTE = 10 * 60 + 25
 SCANNER_STOP_MINUTE = 10 * 60 + 40
 
@@ -51,7 +51,7 @@ def morning_wait_seconds(now):
     minutes = local.hour * 60 + local.minute
     if (not regular_session(local) or
             not SCANNER_STAGE_MINUTE <= minutes < SCANNER_STOP_MINUTE):
-        raise RuntimeError("TRADER_MISSED_WINDOW: outside 09:35-10:40 ET paper staging/entry window; zero orders")
+        raise RuntimeError("TRADER_MISSED_WINDOW: outside 09:05-10:40 ET paper staging/entry window; zero orders")
     signal_time = local.replace(hour=10, minute=25, second=0, microsecond=0)
     return max(0.0, (signal_time - local).total_seconds())
 
