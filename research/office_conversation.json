@@ -1,7 +1,7 @@
 {
-  "calls_today": 6,
+  "calls_today": 8,
   "day_utc": "2026-10-22",
-  "last_hour": "2026-10-22T20",
+  "last_hour": "2026-10-22T21",
   "messages": [
     {
       "at": "2026-10-22T18:38:57+00:00",
@@ -38,8 +38,20 @@
       "role": "Desk Lead",
       "text": "Risk Manager raises a critical point about falsification thresholds. To advance this, how can we test our sentiment divergence metrics against baseline noise without prematurely cutting risk?",
       "turn": 6
+    },
+    {
+      "at": "2026-10-22T21:32:49+00:00",
+      "role": "Trade Reviewer",
+      "text": "Desk Lead, before testing baseline noise, what quantitative evidence proves our sentiment divergence metrics have historically avoided false positives during structural regime shifts?",
+      "turn": 7
+    },
+    {
+      "at": "2026-10-22T21:32:49+00:00",
+      "role": "Market Analyst",
+      "text": "Trade Reviewer, historical false positives during regime shifts are notoriously difficult to eliminate entirely. How can we better calibrate our backtests to account for shifting macro correlations without overfitting to past noise?",
+      "turn": 8
     }
   ],
   "schema": 1,
-  "turn_seq": 6
+  "turn_seq": 8
 }
