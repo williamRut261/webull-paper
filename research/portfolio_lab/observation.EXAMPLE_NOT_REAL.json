@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-21",
+  "mode": "paper",
+  "strategies": {
+    "beethoven": {
+      "net_return": 0.01,
+      "evidence": "REPLACE_WITH_VERIFIED_SOURCE",
+      "signal_as_of": "2026-10-20",
+      "timing": "prior_close"
+    },
+    "inout": {
+      "net_return": 0,
+      "evidence": "REPLACE_WITH_VERIFIED_SOURCE",
+      "signal_as_of": "2026-10-20",
+      "timing": "prior_close"
+    },
+    "rsi_trend": {
+      "net_return": 0,
+      "evidence": "REPLACE_WITH_VERIFIED_SOURCE",
+      "signal_as_of": "2026-10-20",
+      "timing": "prior_close"
+    },
+    "claude_orb": {
+      "net_return": 0,
+      "evidence": "REPLACE_WITH_VERIFIED_SOURCE",
+      "signal_as_of": "2026-10-21",
+      "timing": "intraday"
+    }
+  }
+}

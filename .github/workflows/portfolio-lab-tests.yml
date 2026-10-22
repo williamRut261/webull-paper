@@ -1,0 +1,34 @@
+name: Portfolio Lab Offline Tests (NO BROKER)
+on:
+  pull_request:
+    paths:
+      - 'research/portfolio_lab/**'
+      - 'tests/test_portfolio_lab.py'
+      - 'tests/test_portfolio_daily.py'
+      - 'tests/test_four_signals.py'
+      - 'tests/test_four_strategy_cutover.py'
+      - 'webull_paper/four_strategy_cutover.py'
+      - '.github/workflows/portfolio-lab-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install numerical research dependencies only
+        run: python -m pip install numpy pandas
+      - name: Verify offline tests (no tokens, no broker, no orders)
+        run: |
+          python -m unittest discover -s tests -p test_portfolio_lab.py -v
+          python -m unittest discover -s tests -p test_portfolio_daily.py -v
+          python -m unittest discover -s tests -p test_four_signals.py -v
+          python -m unittest discover -s tests -p test_four_strategy_cutover.py -v
+      - name: Sample JSON portfolio netting (synthetic input only)
+        run: |
+          python -m research.portfolio_lab.cli --config research/portfolio_lab/config.example.json --signals research/portfolio_lab/signals.example.json --as-of 2026-10-20
