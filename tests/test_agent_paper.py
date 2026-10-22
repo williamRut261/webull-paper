@@ -32,23 +32,33 @@ class VirtualPaperSafetyTests(unittest.TestCase):
         self.assertEqual(state["positions"], {})
         self.assertFalse(state["trades"])
 
-    def test_consensus_buy_is_capped_fees_are_explicit(self):
-        state = virtual_step(report())
+    def test_buy_is_queued_until_next_session_close_and_capped(self):
+        intent = virtual_step(report())
+        self.assertEqual(intent["trades"], [])
+        self.assertEqual(intent["positions"], {})
+        self.assertEqual(intent["pending"], {"signal_day": "2026-10-21", "symbol": "GDXD", "action": "BUY"})
+        state = virtual_step(report(day="2026-10-22", price=27, consensus=False), intent)
         trade = state["trades"][0]
         self.assertEqual(trade["side"], "BUY")
-        self.assertLessEqual(trade["shares"] * 25, INITIAL_CASH * MAX_POSITION_FRACTION)
+        self.assertEqual(trade["signal_day"], "2026-10-21")
+        self.assertEqual(trade["assumed_close"], 27)
+        self.assertLessEqual(trade["shares"] * 27, INITIAL_CASH * MAX_POSITION_FRACTION)
         self.assertGreater(trade["estimated_cost"], 0)
         self.assertEqual(state["positions"], {"GDXD": trade["shares"]})
-        self.assertLessEqual(state["cash"] + trade["shares"] * 25, INITIAL_CASH)
+        self.assertLess(state["cash"] + trade["shares"] * 27, INITIAL_CASH)
         self.assertEqual(public_status(report(), state)["actual_broker_orders_from_agents"], 0)
 
     def test_retry_does_not_double_execute(self):
-        state = virtual_step(report())
-        self.assertEqual(virtual_step(report(), state), state)
+        queued = virtual_step(report())
+        self.assertEqual(virtual_step(report(), queued), queued)
+        filled = virtual_step(report(day="2026-10-22", consensus=False), queued)
+        self.assertEqual(virtual_step(report(day="2026-10-22", consensus=False), filled), filled)
 
-    def test_kill_switch_blocks_all_new_virtual_orders(self):
-        state = virtual_step(report(), killed=True)
+    def test_kill_switch_blocks_and_clears_queued_intents(self):
+        queued = virtual_step(report())
+        state = virtual_step(report(day="2026-10-22", consensus=False), queued, killed=True)
         self.assertEqual(state["positions"], {})
+        self.assertEqual(state["pending"], None)
         self.assertEqual(state["trades"], [])
         self.assertEqual(public_status(report(), state, killed=True)["virtual_paper"]["status"], "KILLED")
 
@@ -56,15 +66,21 @@ class VirtualPaperSafetyTests(unittest.TestCase):
         state = virtual_step(report(consensus=False))
         self.assertEqual(state["trades"], [])
         self.assertEqual(state["cash"], INITIAL_CASH)
+        self.assertIsNone(state["pending"])
 
     def test_sell_only_existing_position_and_no_short(self):
-        self.assertEqual(virtual_step(report(action="SELL"))["trades"], [])
-        initial = virtual_step(report())
-        later = virtual_step(report(day="2026-10-22", price=27, action="SELL"), initial)
-        self.assertEqual(len(later["trades"]), 2)
-        self.assertEqual(later["positions"], {})
-        self.assertGreater(later["cash"], INITIAL_CASH)
-        self.assertEqual(later["last_day"], "2026-10-22")
+        self.assertIsNone(virtual_step(report(action="SELL"))["pending"])
+        queued = virtual_step(report())
+        held = virtual_step(report(day="2026-10-22", consensus=False), queued)
+        sell = virtual_step(report(day="2026-10-23", action="SELL"), held)
+        self.assertEqual(len(sell["trades"]), 1)
+        self.assertEqual(sell["pending"]["action"], "SELL")
+        closed = virtual_step(report(day="2026-10-26", price=27, consensus=False), sell)
+        self.assertEqual(len(closed["trades"]), 2)
+        self.assertEqual(closed["trades"][-1]["side"], "SELL")
+        self.assertEqual(closed["positions"], {})
+        self.assertGreater(closed["cash"], INITIAL_CASH)
+        self.assertEqual(closed["last_day"], "2026-10-26")
 
     def test_missing_prices_bad_quotes_and_dates_fail_closed(self):
         old = virtual_step(report())
