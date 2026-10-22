@@ -680,9 +680,13 @@ def read_office_status_snapshot():
             for row in roles:
                 row["stage"] = "UNAVAILABLE"
             run = None
-        ttl = 100 if run and (run["active"] or run["queued"]) else 240
+        # Three scoped workflow reads plus a Check read can exhaust
+        # GitHub's unauthenticated 60 req/hour/IP limit at 100-second polls.
+        # A five-minute bounded cache preserves accuracy without amplifying
+        # an upstream outage into a rapid retry loop.
+        ttl = 300 if run and (run["active"] or run["queued"]) else 360
         if source != "VERIFIED":
-            ttl = 75
+            ttl = 450
         payload = {
             "source": source, "checked_at": checked_at,
             "refresh_after_seconds": ttl, "conversation": conversation,
