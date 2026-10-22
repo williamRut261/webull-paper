@@ -1,5 +1,6 @@
 """Offline tests for private read-only Cloud Run dashboard; no broker or GCP calls."""
 import hashlib
+import json
 import logging
 import os
 import unittest
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from dashboard.app import (
     SANDBOX_HOST, app, choose_account, dollars, normalize_history,
     normalize_positions, read_snapshot, records, sandbox_trade_client,
+    read_agent_feed, AGENT_ROLES,
 )
 
 ACCOUNT_ID = "synthetic-secret-sandbox-account"
@@ -71,6 +73,42 @@ class FakeTrade:
 
 
 class CloudDashboardSafetyTests(unittest.TestCase):
+
+    def test_public_agent_feed_is_strictly_advisory_and_non_broker(self):
+        class Page:
+            def __init__(self, body):
+                self.body = body
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self, n):
+                return self.body[:n]
+        doc = {"schema": 1, "status": "RESEARCH_ONLY", "provider": "gemini",
+               "as_of": "2026-10-22", "consensus": "HYPOTHESIS_FOR_BACKTEST",
+               "hypothesis": {"symbol": "GDXD", "action": "BUY"},
+               "agents": [{"role": role, "symbol": "GDXD", "action": "BUY",
+                           "confidence": .8} for role in AGENT_ROLES],
+               "virtual_paper": {"status": "ENABLED", "current_equity": 9999.5,
+                                 "cumulative_return_pct": -.005,
+                                 "worst_observed_drawdown_pct": -.005,
+                                 "latest_trades": []}}
+        def opener(req, timeout):
+            self.assertEqual(req.full_url.split("/")[2], "raw.githubusercontent.com")
+            return Page(json.dumps(doc).encode())
+        view = read_agent_feed(opener=opener)
+        self.assertEqual(len(view["agents"]), 7)
+        self.assertEqual(view["decision"], "HYPOTHESIS ONLY: BUY GDXD")
+        self.assertEqual(view["virtual_equity"], "$9,999.50")
+        self.assertEqual(view["trades"], [])
+        doc["agents"][0]["role"] = "Injected Broker"
+        with self.assertRaises(ValueError):
+            read_agent_feed(opener=opener)
+        doc["agents"][0]["role"] = AGENT_ROLES[0]
+        doc["agents"][0]["confidence"] = float("nan")
+        with self.assertRaises(ValueError):
+            read_agent_feed(opener=opener)
+
     def test_sandbox_hostname_is_fixed(self):
         self.assertEqual(SANDBOX_HOST, "api.sandbox.webull.com")
 
@@ -264,7 +302,8 @@ class CloudDashboardSafetyTests(unittest.TestCase):
             with patch("dashboard.app.id_token.verify_token",
                        return_value={"iss": "https://cloud.google.com/iap",
                                      "email": "owner@example.com"}):
-                with patch("dashboard.app.sandbox_trade_client", return_value=FakeTrade()):
+                with patch("dashboard.app.sandbox_trade_client", return_value=FakeTrade()), \
+                     patch("dashboard.app.read_agent_feed", return_value=None):
                     with app.test_client() as client:
                         response = client.get("/", headers={
                             "X-Goog-Iap-Jwt-Assertion": "test-signed"
