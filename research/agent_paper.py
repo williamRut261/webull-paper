@@ -23,7 +23,7 @@ MAX_LOG_ROWS = 120
 
 def empty_ledger():
     return {"schema": 1, "cash": INITIAL_CASH, "positions": {},
-            "peak_equity": INITIAL_CASH, "last_day": "",
+            "peak_equity": INITIAL_CASH, "last_day": "", "pending": None,
             "trades": [], "daily": []}
 
 
@@ -74,16 +74,20 @@ def daily_prices(report):
 
 
 def virtual_step(report, previous=None, *, killed=False):
-    """Pure, idempotent next trading-day simulation. No external side effects."""
+    """Pure forward-only virtual ledger; NEVER fills signals at known past closes.
+
+    A hypothesis generated AFTER a close is queued for the NEXT day's close.
+    Next-close synthetic fills, even after cost assumptions, are not broker fills.
+    """
     state = deepcopy(previous if previous is not None else empty_ledger())
     if state.get("schema") != 1 or not isinstance(state.get("positions"), dict):
         raise ValueError("Invalid virtual ledger")
     if report.get("status") != "RESEARCH_ONLY" or report.get("broker_connected") is not False:
         raise ValueError("Only disconnected research may inform virtual paper trades")
-    votes = validated_votes(report)
+    validated_votes(report)
     day, prices = daily_prices(report)
     if state.get("last_day") == day:
-        return state  # A retry cannot duplicate a simulated fill.
+        return state  # Retry cannot duplicate a fill or a new signal.
     if state.get("last_day") and day < state["last_day"]:
         raise ValueError("Out-of-order daily research")
     holdings = state["positions"]
@@ -96,38 +100,54 @@ def virtual_step(report, previous=None, *, killed=False):
     equity = cash + sum(qty * prices[symbol] for symbol, qty in holdings.items())
     if not math.isfinite(equity) or equity <= 0:
         raise ValueError("Invalid virtual equity")
-    hypothesis = report.get("hypothesis")
-    if report.get("consensus") != "HYPOTHESIS_FOR_BACKTEST":
-        hypothesis = None
-    if hypothesis is not None and not isinstance(hypothesis, dict):
-        raise ValueError("Malformed hypothesis")
-    if hypothesis and (hypothesis.get("symbol") not in prices or
-                       hypothesis.get("action") not in ("BUY", "SELL")):
-        raise ValueError("Unpriced or invalid hypothesis")
-    # The agent is not permitted to short, borrow, trade LIVE, or place orders.
-    if not killed and hypothesis:
-        symbol, action = hypothesis["symbol"], hypothesis["action"]
+
+    # Process LAST trading day's queued hypothesis with THIS day's quote.
+    pending = state.get("pending")
+    if pending is not None:
+        if (not isinstance(pending, dict)
+                or pending.get("symbol") not in SYMBOLS
+                or pending.get("action") not in ("BUY", "SELL")
+                or not isinstance(pending.get("signal_day"), str)
+                or pending["signal_day"] >= day):
+            raise ValueError("Invalid or out-of-sequence virtual intent")
+    state["pending"] = None
+    if pending is not None and not killed:
+        symbol, action = pending["symbol"], pending["action"]
+        if symbol not in prices:
+            raise ValueError("Missing next-session price; no virtual fill")
         price = prices[symbol]
         if action == "SELL" and symbol in holdings:
             qty = holdings.pop(symbol)
             fee = qty * price * COST_FRACTION
             cash += qty * price - fee
-            state["trades"].append({"day": day, "symbol": symbol, "side": "SELL",
-                                    "shares": qty, "assumed_close": price,
-                                    "estimated_cost": round(fee, 2)})
+            state["trades"].append({"day": day, "signal_day": pending["signal_day"],
+                                    "symbol": symbol, "side": "SELL", "shares": qty,
+                                    "assumed_close": price, "estimated_cost": round(fee, 2)})
         elif action == "BUY" and not holdings:
-            budget = min(
-                equity * MAX_POSITION_FRACTION,
-                equity * MAX_ESTIMATED_TRADE_RISK / ASSUMED_STOP_FRACTION,
-                cash / (1 + COST_FRACTION))
+            budget = min(equity * MAX_POSITION_FRACTION,
+                         equity * MAX_ESTIMATED_TRADE_RISK / ASSUMED_STOP_FRACTION,
+                         cash)
             qty = math.floor(budget / (price * (1 + COST_FRACTION)))
             if qty > 0:
                 fee = qty * price * COST_FRACTION
                 cash -= qty * price + fee
                 holdings[symbol] = qty
-                state["trades"].append({"day": day, "symbol": symbol, "side": "BUY",
-                                        "shares": qty, "assumed_close": price,
-                                        "estimated_cost": round(fee, 2)})
+                state["trades"].append({"day": day, "signal_day": pending["signal_day"],
+                                        "symbol": symbol, "side": "BUY", "shares": qty,
+                                        "assumed_close": price, "estimated_cost": round(fee, 2)})
+
+    # Today's opinion may only be queued, never executed at today's close.
+    hypothesis = report.get("hypothesis") if report.get("consensus") == "HYPOTHESIS_FOR_BACKTEST" else None
+    if hypothesis is not None and not isinstance(hypothesis, dict):
+        raise ValueError("Malformed hypothesis")
+    if hypothesis and (hypothesis.get("symbol") not in prices
+                       or hypothesis.get("action") not in ("BUY", "SELL")):
+        raise ValueError("Unpriced or invalid hypothesis")
+    if hypothesis and not killed:
+        symbol, action = hypothesis["symbol"], hypothesis["action"]
+        if (action == "BUY" and not holdings) or (action == "SELL" and symbol in holdings):
+            state["pending"] = {"signal_day": day, "symbol": symbol, "action": action}
+
     state["cash"] = round(cash, 8)
     mark = cash + sum(qty * prices[symbol] for symbol, qty in holdings.items())
     if mark <= 0 or not math.isfinite(mark):
@@ -157,6 +177,7 @@ def public_status(report, ledger, *, killed=False):
         "provider": str(report.get("provider", "UNAVAILABLE"))[:20],
         "consensus": str(report.get("consensus", "NO_CONSENSUS"))[:40],
         "hypothesis": hypothesis, "agents": votes,
+        "queued_virtual_intent": ledger.get("pending"),
         "virtual_paper": {
             "status": "KILLED" if killed else "ENABLED",
             "starting_equity": INITIAL_CASH,
@@ -167,7 +188,7 @@ def public_status(report, ledger, *, killed=False):
             "latest_trades": ledger["trades"][-8:],
         },
         "actual_broker_orders_from_agents": 0,
-        "note": "Separate $10,000 virtual ledger, hypothetical daily-close fills only; not Webull orders, live returns or an audited backtest.",
+        "note": "Separate $10,000 virtual ledger, hypothetical NEXT-session daily-close fills only; not Webull orders, live returns or an audited backtest.",
     }
 
 
