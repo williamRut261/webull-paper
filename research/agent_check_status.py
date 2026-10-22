@@ -46,7 +46,7 @@ def publish_stage(role, event, check_id=None, opener=urlopen):
                    "conclusion": "success" if event == "success" else "failure",
                    "completed_at": now,
                    "output": {"title": "Research role " + event,
-                              "summary": "No prompts, trades or account data published."}}
+                              "summary": "Only a whitelisted role and completion state are published."}}
     req = Request(uri, data=json.dumps(payload).encode("utf-8"),
                   method=method,
                   headers={"Authorization": "Bearer " + token,
