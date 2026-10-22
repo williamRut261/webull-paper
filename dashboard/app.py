@@ -58,7 +58,7 @@ def amount(value):
 
 
 def dollars(number):
-    return "Unavailable" if number is None else f"\${number:,.2f}"
+    return "Unavailable" if number is None else f"${number:,.2f}"
 
 
 def choose_account(accounts, index, sha256):
