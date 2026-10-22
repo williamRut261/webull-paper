@@ -157,7 +157,7 @@ def build_payload(symbol, price, equity, cash, day):
     # Limit to 5% of this dedicated sandbox equity. Leave 95% uninvested.
     notional=min(equity*MAX_POSITION_FRACTION,cash*0.98)
     qty=Decimal(str(notional))/Decimal(str(price))
-    qty=qty.quantize(Decimal("0.000001"),rounding=ROUND_DOWN)
+    qty=qty.quantize(Decimal("0.00001"),rounding=ROUND_DOWN)
     if qty>=1:
         qty=qty.to_integral_value(rounding=ROUND_DOWN)
     if notional<MIN_NOTIONAL or qty*Decimal(str(price))<Decimal(str(MIN_NOTIONAL)):
@@ -175,7 +175,10 @@ def build_sell_payload(symbol, held_qty, day):
     if symbol not in ALLOWED or type(held_qty) not in (int,float) or (
             not math.isfinite(held_qty) or held_qty<=0):
         raise RuntimeError("Invalid sandbox sell position")
-    q=Decimal(str(held_qty)).quantize(Decimal("0.000001"),rounding=ROUND_DOWN)
+    exact=Decimal(str(held_qty))
+    q=exact.quantize(Decimal("0.00001"),rounding=ROUND_DOWN)
+    if exact!=q:
+        raise RuntimeError("Held shares exceed Webull maximum five-decimal precision")
     if q>=1 and q!=q.to_integral_value(rounding=ROUND_DOWN):
         raise RuntimeError("Broker fractional mixed positions require manual reconciliation")
     return {"client_order_id":CID_PREFIX+day.replace("-","")+"S"+symbol,
