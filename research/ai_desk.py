@@ -143,26 +143,33 @@ def safe_report(snapshot, opinions):
 
 
 def run_agents(snapshot, model, provider="gemini", requester=request_opinion):
-    """Use identical evidence for any selected provider; research has no broker tools."""
+    """Same seven sequential model calls; optional read-only role observability."""
+    from research.agent_check_status import publish_stage
     opinions, usage = {}, {"input_tokens": 0, "output_tokens": 0}
     for role in ROLES:
-        prompt = json.dumps({"source_snapshot": snapshot, "earlier_opinions": opinions,
-                             "role": role, "research_only": True}, sort_keys=True)
-        entry, tokens = requester(provider, model, instructions(role), prompt)
-        if not isinstance(entry, dict) or len(json.dumps(entry)) > 5000:
-            raise ValueError("Invalid or oversized opinion")
-        if (entry.get("symbol") not in snapshot["quotes"]
-                and not (entry.get("symbol") == "NONE" and entry.get("action") == "NO_TRADE")):
-            raise ValueError("Specialist selected unknown symbol")
-        if entry.get("action") not in ("BUY", "SELL", "HOLD", "NO_TRADE"):
-            raise ValueError("Unsupported specialist action")
-        if not isinstance(tokens, dict):
-            raise ValueError("Invalid token usage")
-        for key in usage:
-            value = tokens.get(key)
-            if type(value) is int and 0 <= value <= 100000000:
-                usage[key] += value
-        opinions[role] = entry
+        check_id = publish_stage(role, "start")
+        try:
+            prompt = json.dumps({"source_snapshot": snapshot, "earlier_opinions": opinions,
+                                 "role": role, "research_only": True}, sort_keys=True)
+            entry, tokens = requester(provider, model, instructions(role), prompt)
+            if not isinstance(entry, dict) or len(json.dumps(entry)) > 5000:
+                raise ValueError("Invalid or oversized opinion")
+            if (entry.get("symbol") not in snapshot["quotes"]
+                    and not (entry.get("symbol") == "NONE" and entry.get("action") == "NO_TRADE")):
+                raise ValueError("Specialist selected unknown symbol")
+            if entry.get("action") not in ("BUY", "SELL", "HOLD", "NO_TRADE"):
+                raise ValueError("Unsupported specialist action")
+            if not isinstance(tokens, dict):
+                raise ValueError("Invalid token usage")
+            for key in usage:
+                value = tokens.get(key)
+                if type(value) is int and 0 <= value <= 100000000:
+                    usage[key] += value
+            opinions[role] = entry
+        except Exception:
+            publish_stage(role, "failure", check_id)
+            raise
+        publish_stage(role, "success", check_id)
     report = safe_report(snapshot, opinions)
     report["provider"], report["model"], report["token_usage"] = provider, model, usage
     return report

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from dashboard.app import (
     app, OFFICE_ROLES, build_office_workers, read_office_run,
+    read_office_role_checks,
 )
 
 
@@ -76,6 +77,30 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertFalse(status["queued"])
         self.assertIn("/runs/12345", status["run_url"])
 
+    def test_verified_per_role_github_checks_only_enable_actual_worker(self):
+        sha = "a" * 40
+        checks = {"check_runs": [
+            {"name": "CI unrelated", "status": "in_progress", "conclusion": None},
+            {"name": "AI Office / Technical Analyst", "status": "in_progress", "conclusion": None},
+            {"name": "AI Office / Market Analyst", "status": "completed", "conclusion": "success"},
+            {"name": "AI Office / Risk Manager", "status": "completed", "conclusion": "failure"},
+            {"name": "AI Office / unknown", "status": "in_progress", "conclusion": None},
+        ]}
+        def opener(req, timeout):
+            self.assertIn("/commits/" + sha + "/check-runs", req.full_url)
+            self.assertEqual(req.full_url.split("/")[2], "api.github.com")
+            return Response(json.dumps(checks).encode())
+        statuses = read_office_role_checks(sha, opener=opener)
+        self.assertEqual(statuses, {
+            "Technical Analyst": "WORKING", "Market Analyst": "DONE",
+            "Risk Manager": "FAILED"})
+        workers = build_office_workers(recorded_report(), statuses)
+        self.assertEqual(workers[1]["stage"], "WORKING")
+        self.assertEqual(workers[0]["stage"], "DONE")
+        self.assertIsNone(workers[6]["stage"])
+        self.assertEqual(read_office_role_checks(None, opener=opener), {})
+        self.assertEqual(read_office_role_checks("../../bad", opener=opener), {})
+
     def test_completed_and_queued_are_not_mistaken_for_live_execution(self):
         for state, expected in (("completed", False), ("queued", False), ("in_progress", True)):
             with self.subTest(state=state):
@@ -115,7 +140,7 @@ class AgentOfficeTests(unittest.TestCase):
                     self.assertIn(b"Market Analyst", response.data)
                     self.assertIn(b"Trade Reviewer", response.data)
                     self.assertIn(b"DESK RUN IN PROGRESS", response.data)
-                    self.assertIn(b"Individual role progress is not exposed", response.data)
+                    self.assertIn(b"Individual role stages come from", response.data)
                     self.assertEqual(response.data.count(b'class="pod '), 7)
                     self.assertIn(b'id="motion"', response.data)
                     self.assertIn(b"prefers-reduced-motion", response.data)
@@ -142,7 +167,7 @@ class AgentOfficeTests(unittest.TestCase):
         self.assertIn("agent-walker", source)
         self.assertIn("@keyframes step-leg", source)
         self.assertIn('aria-label="Animated virtual research office"', source)
-        self.assertIn("not exposed", source.lower())
+        self.assertIn("stage remains unavailable", source.lower())
         docker = (Path(__file__).resolve().parents[1] /
                   "dashboard/Dockerfile").read_text()
         self.assertIn("COPY templates/ /app/templates/", docker)

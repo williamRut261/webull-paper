@@ -20,6 +20,7 @@ on:
 permissions:
   # Publish ONLY sanitized public opinions and a separate virtual paper ledger.
   contents: write
+  checks: write
 
 concurrency:
   group: ai-desk-research-${{ github.ref }}
@@ -42,6 +43,8 @@ jobs:
       AI_DESK_GROK_MODEL: ${{ vars.AI_DESK_GROK_MODEL || 'grok-4.7' }}
       AI_DESK_FOCUS: ${{ inputs.focus_symbol || 'GDXD' }}
       AI_PAPER_KILL_SWITCH: ${{ vars.AI_PAPER_KILL_SWITCH || 'false' }}
+      AI_OFFICE_CHECKS_ENABLED: 'true'
+      AI_OFFICE_GITHUB_TOKEN: ${{ github.token }}
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
