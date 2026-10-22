@@ -1,0 +1,44 @@
+name: Audit viral Claude Polymarket claim (PUBLIC DATA ONLY)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/polymarket-wallet-audit.yml"
+      - "research/polymarket_wallet_audit.py"
+
+permissions:
+  contents: read
+
+jobs:
+  public-data-read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      PYTHONPATH: .
+      # NO WEBULL, ALPACA, POLYMARKET OR CRYPTO TRADING CREDENTIALS
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate audit offline before any API request
+        run: python -m unittest discover -s tests -p test_polymarket_wallet_audit.py -v
+      - name: Get public Polymarket wallet stats and latest 100 fills
+        run: python -m research.polymarket_wallet_audit
+      - name: Publish clearly scoped findings
+        if: always()
+        run: |
+          if test -f out/polymarket-claude-wallet-audit/summary.md; then
+            cat out/polymarket-claude-wallet-audit/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Public API unavailable: audit incomplete. No orders or accounts touched." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Save data summary (NOT full trading history)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: viral-claude-wallet-public-audit
+          path: out/polymarket-claude-wallet-audit/
+          if-no-files-found: warn
+          retention-days: 21
