@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+{% if run and (run.active or run.queued) %}<meta http-equiv="refresh" content="30">{% endif %}
+<title>Agent Office — Stonks Mission Control</title>
+<style>
+:root{color-scheme:dark;--ink:#e8f6f5;--muted:#8ea5b8;--line:#294657;--bg:#080f19;--mint:#79f8bf;--yellow:#ffc67f;--blue:#71c8ff;--panel:#142431}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 64% -20%,#19374b 0%,transparent 45%),#080f19;color:var(--ink)}
+a{color:#9dece9;text-decoration:none}a:hover{text-decoration:underline}button,summary,input{font:inherit}
+::selection{background:#86e5b1;color:#091826}
+.page{max-width:1590px;margin:0 auto;padding:25px 30px 65px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-bottom:21px;border-bottom:1px solid #284052}
+.brand{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:900;letter-spacing:.24em}.brand-logo{display:grid;place-items:center;width:37px;height:37px;background:#9df9c9;color:#0c242b;box-shadow:4px 4px 0 #315453;font-size:21px;font-weight:1000}
+.brand span:last-child{color:#aec0cf;font-weight:600}.nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.nav a{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.08em;border:1px solid #2e5261;background:#122333;padding:11px 15px;border-radius:9px}.nav a.current{background:#244237;border-color:#659c72;color:#b5f8d5}
+.header{display:flex;justify-content:space-between;align-items:end;gap:25px;margin:28px 0 21px;flex-wrap:wrap}
+.eyebrow,.section-tag{color:#72d7b4;letter-spacing:.24em;text-transform:uppercase;font-weight:850;font-size:10px}
+h1{font-size:clamp(30px,3.4vw,54px);margin:5px 0 8px;font-weight:900;letter-spacing:-.065em;line-height:1.1}
+.header p{max-width:720px;color:#aabaca;font-size:14px;line-height:1.55;margin:0}
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:13px}
+.status-pill{display:flex;align-items:center;gap:8px;border:1px solid #315262;background:#162b38;border-radius:9px;padding:13px 17px;box-shadow:0 4px 18px #0003;font-size:12px;font-weight:800;letter-spacing:.06em}
+.status-light{width:9px;height:9px;background:#8397ac;border-radius:2px}
+.status-pill.active .status-light{background:#60ffb9;box-shadow:0 0 16px #2fffb0;animation:beacon 1.5s ease-in-out infinite}
+.status-pill.ok .status-light{background:#60ffb9}.status-pill.fail .status-light{background:#ff8186}
+.motion-option{display:inline-flex;align-items:center;gap:9px;border:1px solid #365162;border-radius:8px;padding:12px 14px;color:#b4c6d2;font-size:12px;cursor:pointer;background:#0e1c2b}
+.motion-option input{accent-color:#7af5b0}
+body:has(#motion:not(:checked)) *,body:has(#motion:not(:checked)) *:before,body:has(#motion:not(:checked)) *:after{animation-play-state:paused!important}
+@keyframes beacon{50%{opacity:.4;box-shadow:0 0 0 transparent}}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:19px;align-items:start}
+.window{border:1px solid #38586a;background:#0f1e2a;box-shadow:0 25px 70px #0004;border-radius:15px;overflow:hidden}
+.window-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px 18px;border-bottom:1px solid #345062;background:linear-gradient(90deg,#173443,#142935)}
+.window-title{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:900;letter-spacing:.15em}
+.window-icon{display:inline-flex;gap:4px}.window-icon i{display:block;width:7px;height:7px;border:1px solid #7ba3a8;background:#234858}
+.window-icon i:first-child{background:#80c6a4}.window-icon i:nth-child(2){background:#ddb16a}
+.window-meta{font-size:11px;color:#96afbf;font-weight:600}
+.canvas-viewport{overflow-x:auto;overflow-y:hidden;scrollbar-color:#3d6b6c #142735;scrollbar-width:thin}
+.canvas-viewport::-webkit-scrollbar{height:11px}.canvas-viewport::-webkit-scrollbar-thumb{background:#3d6b6c;border-radius:10px}
+.room{position:relative;min-width:1000px;height:764px;overflow:hidden;background:#162939;isolation:isolate}
+.room:before{content:"";position:absolute;inset:0 0 auto;height:118px;border-bottom:9px solid #0c1928;background:
+repeating-linear-gradient(90deg,transparent 0 130px,#192f40 132px 135px),
+linear-gradient(180deg,#28475a,#1c3448);box-shadow:0 12px 25px #0815236b;z-index:0}
+.room:after{content:"";position:absolute;top:118px;bottom:0;left:0;right:0;
+background:repeating-linear-gradient(0deg,transparent 0 39px,#24435472 40px 41px),repeating-linear-gradient(90deg,transparent 0 39px,#24435472 40px 41px),
+linear-gradient(125deg,#192d3c 20%,#21384a 65%,#152a3a);z-index:-1}
+.skylight{position:absolute;top:14px;left:2.5%;width:27%;height:85px;border:7px solid #0d2031;background:linear-gradient(#234a65 6%,#577491 77%,#314967);overflow:hidden;box-shadow:inset 0 0 0 2px #588ca1,5px 6px 0 #0b1b2a}
+.skylight.two{left:36%;width:27%}.skylight.three{left:69%;width:28%}
+.skylight:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 0 32%,#0d2136 33% 35%,transparent 36% 66%,#102537 67% 69%,transparent 70%),linear-gradient(#fff2 3px,transparent 8px)}
+.skylight:after{content:"";position:absolute;bottom:-5px;left:16%;height:42px;width:90px;background:#172f43;clip-path:polygon(0 100%,15% 53%,27% 78%,40% 20%,59% 65%,69% 40%,84% 77%,100% 35%,100% 100%)}
+.wall-sign{position:absolute;top:130px;left:44%;transform:translateX(-50%);color:#a3f7d0;background:#102934;border:2px solid #3d7c6b;padding:9px 19px;letter-spacing:.22em;font-weight:900;font-size:12px;box-shadow:0 0 18px #54cc9f38;z-index:2}
+.wall-sign span{color:#edbe81}
+.rail{position:absolute;top:194px;left:0;width:100%;border-top:8px solid #121e2b;border-bottom:3px solid #3a5e68;z-index:1}
+.run-pipe{position:absolute;top:188px;width:100%;height:6px;background:repeating-linear-gradient(90deg,#549b86 0 40px,#386351 41px 51px);filter:drop-shadow(0 0 6px #79f9ac66);animation:flowpipe 8s linear infinite}
+@keyframes flowpipe{to{background-position:300px 0}}
+.floor-shadow{position:absolute;bottom:0;left:0;width:100%;height:100px;background:linear-gradient(transparent,#06131e88);pointer-events:none}
+.runner-line{position:absolute;top:458px;left:2%;width:95%;height:7px;border-top:3px dashed #61889533;border-bottom:3px dashed #6188952b}
+.runner-line:before{content:"";position:absolute;top:-11px;left:-50px;width:55px;height:12px;background:linear-gradient(90deg,transparent,#93e4ad,transparent);filter:blur(6px);animation:route 14s linear infinite}
+@keyframes route{to{left:110%}}
+.pod{position:absolute;display:block;width:222px;height:221px;z-index:3;--accent:#91bdff;--skin:#dab18e;cursor:pointer}
+.pod:nth-of-type(1){left:2%;top:210px;--skin:#bb8c6b;animation-delay:-.2s}
+.pod:nth-of-type(2){left:26%;top:210px;--skin:#e5b995;animation-delay:-.6s}
+.pod:nth-of-type(3){left:50%;top:210px;--skin:#dcb48b;animation-delay:-1.2s}
+.pod:nth-of-type(4){left:74%;top:210px;--skin:#a87355;animation-delay:-2.1s}
+.pod:nth-of-type(5){left:8%;top:485px;--skin:#c18e70;animation-delay:-.7s}
+.pod:nth-of-type(6){left:39%;top:485px;--skin:#e0b39c;animation-delay:-1.4s}
+.pod:nth-of-type(7){left:70%;top:485px;--skin:#b78870;animation-delay:-2.7s}
+.pod summary{list-style:none;display:block;outline:none;position:relative;height:195px;border:1px solid #6a7c83;border-bottom:5px solid #243848;
+border-radius:12px;background:linear-gradient(180deg,#213b49 2%,#263c49 37%,#122636 100%);box-shadow:6px 8px 0 #09172588,0 0 22px #0004;transition:border-color .2s,transform .2s}
+.pod summary::-webkit-details-marker{display:none}
+.pod summary:hover,.pod summary:focus-visible{border-color:#9af6c8;transform:translateY(-3px)}
+.pod[open] summary{border-color:#9af6c8;box-shadow:0 0 0 2px #67f6bc66,6px 8px 0 #09172588}
+.pod summary:before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--accent);opacity:.7;border-radius:8px 0 0 8px}
+.pod-title{display:flex;justify-content:space-between;align-items:center;position:absolute;left:13px;right:12px;top:10px;z-index:7}
+.pod-name{font-size:14px;font-weight:900;letter-spacing:-.02em}.pod-role{font-size:9px;color:#afc5d1;margin-top:3px;font-weight:750;letter-spacing:.02em}
+.pod-led{height:7px;width:7px;background:#567384;box-shadow:0 0 0 3px #101c29;border-radius:50%}
+.pod.has-vote .pod-led{background:#86f4b8;box-shadow:0 0 9px #67e6b9}
+.pod-ambient{position:absolute;top:70px;right:12px;width:107px;height:73px;background:#11283a;border:6px solid #0a1826;border-radius:5px;transform:skewY(-5deg);box-shadow:5px 7px 0 #081626;overflow:hidden}
+.pod-ambient:before{content:"";position:absolute;inset:3px;background:repeating-linear-gradient(0deg,transparent 0 8px,#77d5bd23 9px 10px)}
+.pod-ambient:after{content:"";position:absolute;top:6px;left:-50%;height:7px;width:40%;background:#9dfcba33;filter:blur(4px);animation:scan 4s linear infinite}
+@keyframes scan{to{left:110%}}
+.signal-graph{position:absolute;left:6px;right:6px;bottom:10px;height:32px;background:linear-gradient(135deg,transparent 15%,#82e3c599 17%,transparent 19%,transparent 26%,#82e3c599 28%,transparent 30%,transparent 48%,#82e3c599 50%,transparent 52%);opacity:.75}
+.pod.is-running .pod-ambient{box-shadow:0 0 16px #7cebc277,5px 7px 0 #081626}
+.monitor-mast{position:absolute;width:10px;height:13px;background:#0a1826;right:58px;top:139px}
+.person{position:absolute;left:16px;top:70px;width:70px;height:92px;z-index:3;transform-origin:center bottom;animation:bob 4s ease-in-out infinite;animation-delay:inherit}
+@keyframes bob{50%{transform:translateY(-4px)}}
+.person .head{position:absolute;left:20px;top:3px;width:39px;height:39px;background:var(--skin);border:3px solid #172636;border-radius:8px 8px 10px 10px;z-index:4;box-shadow:inset -5px -4px #0002}
+.person .head:before{content:"";position:absolute;left:-3px;top:-6px;width:42px;height:17px;background:var(--hair);border:3px solid #172636;border-radius:8px 11px 2px 2px;transform:rotate(-3deg)}
+.person .head:after{content:"••";position:absolute;top:14px;left:9px;font-size:18px;line-height:6px;letter-spacing:4px;color:#192633}
+.person .jacket{position:absolute;z-index:3;left:13px;top:38px;width:51px;height:49px;border:3px solid #142738;border-radius:15px 16px 7px 7px;background:var(--accent);box-shadow:inset -8px -3px #0003}
+.person .jacket:before{content:"";position:absolute;left:17px;top:2px;width:12px;height:24px;background:#1730449c;border-radius:0 0 10px 10px}
+.person .limb{position:absolute;z-index:5;top:47px;width:13px;height:32px;background:var(--skin);border:2px solid #142638;border-radius:9px}
+.person .limb.l{left:5px;transform:rotate(-14deg)}.person .limb.r{right:1px;transform:rotate(26deg)}
+.pod.is-running .person .limb.l{animation:type-a .43s ease-in-out infinite alternate}
+.pod.is-running .person .limb.r{animation:type-b .53s ease-in-out infinite alternate}
+@keyframes type-a{to{transform:rotate(-29deg) translateY(5px)}}@keyframes type-b{to{transform:rotate(34deg) translateY(5px)}}
+.tabletop{position:absolute;left:8px;right:7px;bottom:24px;height:21px;border:3px solid #362f36;border-bottom:6px solid #6a5160;
+background:linear-gradient(#c39d74 0 60%,#8d6b61 60%);z-index:5;box-shadow:0 3px 0 #0d1d28;border-radius:4px}
+.tabletop:after{content:"";position:absolute;width:29px;height:5px;background:#1d3341;right:40px;top:-9px;border:2px solid #0c1a2a;border-radius:5px}
+.pod-footer{position:absolute;left:13px;right:13px;bottom:5px;z-index:8;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px}
+.pod-footer .vote{font-weight:900;color:#aef7d0;white-space:nowrap}
+.pod-footer .action{color:#bacdde;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bubble{position:absolute;top:46px;left:65px;z-index:9;min-width:32px;padding:5px 8px;background:#e8f5e8;color:#1c3543;font-weight:1000;font-size:10px;letter-spacing:.05em;border:2px solid #162b36;border-radius:7px;box-shadow:3px 4px #071a26}
+.bubble:after{content:"";position:absolute;left:7px;bottom:-8px;border-width:7px 6px 0 0;border-style:solid;border-color:#e8f5e8 transparent transparent transparent}
+.pod.is-running .bubble{animation:talk 1.5s ease-in-out infinite}
+@keyframes talk{50%{transform:translateY(-5px)}}
+.pod .inspect{position:absolute;z-index:30;left:0;top:205px;width:270px;background:#0c1c29;border:2px solid #8deec0;border-radius:11px;padding:14px;box-shadow:5px 7px 0 #07111b}
+.pod .inspect h3{font-size:12px;letter-spacing:.06em;margin:0 0 8px;color:#c7fbe2}
+.pod .inspect p{font-size:11px;line-height:1.5;color:#c6d8e1;margin:6px 0}
+.pod .inspect small{font-size:9px;line-height:1.4;color:#84a9ad}
+.pod[open]{z-index:30}
+.pod .inspect{display:none}.pod[open] .inspect{display:block}
+.room-label{position:absolute;font-size:10px;font-weight:900;letter-spacing:.2em;color:#8ab7b8;z-index:2}
+.room-label.top{top:173px;right:24px}.room-label.bottom{bottom:13px;left:21px}
+.carpet{position:absolute;left:1%;right:1%;top:444px;height:24px;background:repeating-linear-gradient(90deg,#45666644 0 14px,#3e616640 14px 28px);border-top:3px solid #4e7e75;border-bottom:3px solid #376162;opacity:.65}
+.planter{position:absolute;left:16px;bottom:18px;width:50px;height:58px;z-index:4}
+.planter.right{left:auto;right:18px;bottom:315px;transform:scale(.8)}
+.planter .pot{position:absolute;bottom:0;left:9px;width:36px;height:23px;background:#b77560;border:3px solid #583b40;border-radius:3px 3px 8px 8px;box-shadow:4px 3px #0b1c25}
+.planter .foliage{position:absolute;left:6px;top:0;width:44px;height:40px;background:#428a73;clip-path:polygon(50% 0,65% 23%,83% 6%,81% 43%,99% 38%,89% 67%,72% 78%,53% 63%,31% 94%,24% 64%,0 55%,21% 33%,16% 10%,38% 27%);animation:leaves 6s ease-in-out infinite}
+@keyframes leaves{50%{transform:rotate(4deg)}}
+.robot{position:absolute;z-index:9;top:456px;left:6%;width:35px;height:42px;animation:roam 25s linear infinite;filter:drop-shadow(4px 5px 1px #081723)}
+.robot .shell{position:absolute;inset:7px 3px 2px;border:3px solid #163645;border-radius:8px 8px 13px 13px;background:#dbd8c0}
+.robot .shell:after{content:"••";position:absolute;left:4px;top:7px;font-size:18px;letter-spacing:3px;color:#1a5764}
+.robot .antenna{position:absolute;left:16px;top:0;width:4px;height:13px;background:#e2c9a1}
+.robot .antenna:after{content:"";position:absolute;left:-3px;top:-3px;width:10px;height:7px;background:#66e8bf;border-radius:6px}
+@keyframes roam{0%{transform:translateX(0)}46%{transform:translateX(910px)}50%{transform:translateX(910px) scaleX(-1)}96%{transform:translateX(0) scaleX(-1)}100%{transform:translateX(0)}}
+.deskboard{position:absolute;right:18px;top:125px;width:195px;height:54px;border:3px solid #203f4d;background:#092534;z-index:2;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:inset 0 0 0 2px #346f66,3px 3px #081b28}
+.deskboard .bars{display:flex;align-items:end;gap:4px;height:25px}.deskboard .bars span{display:block;width:7px;background:#77efc3;animation:bars 1.4s ease-in-out infinite alternate;height:12px}.deskboard .bars span:nth-child(2){height:20px;animation-delay:-.3s}.deskboard .bars span:nth-child(3){height:17px;animation-delay:-.8s}.deskboard .bars span:nth-child(4){height:23px;animation-delay:-.5s}
+@keyframes bars{to{height:6px;opacity:.4}}
+.deskboard p{font-size:10px;font-weight:900;color:#9dedb8;letter-spacing:.06em}
+.marquee{padding:10px 16px;border-top:1px solid #345464;background:#102632;color:#97beb9;font-size:10px;font-weight:800;letter-spacing:.11em;display:flex;gap:18px;justify-content:space-between;flex-wrap:wrap}
+.hint{color:#9db7bd;font-weight:600;letter-spacing:0}
+.sidebar{display:grid;gap:17px}
+.panel{background:linear-gradient(140deg,#142a37,#111f30);border:1px solid #335365;border-radius:14px;overflow:hidden}
+.panel-head{padding:15px 16px 13px;border-bottom:1px solid #2a4c59;display:flex;justify-content:space-between;align-items:center}
+.panel-head h2{font-size:11px;letter-spacing:.13em;margin:0;color:#cef8e4}
+.panel-head span{font-size:10px;color:#7896a2}
+.panel-body{padding:15px 16px}
+.big-number{font-size:33px;letter-spacing:-.06em;font-weight:900;margin:3px 0}
+.micro{font-size:11px;color:#9cb5be;line-height:1.65}
+.metric{padding:12px 0;border-bottom:1px solid #2e4858;display:flex;justify-content:space-between;gap:9px;font-size:12px}
+.metric:last-child{border-bottom:0}.metric span:first-child{color:#9fb7c2}.metric strong{text-align:right;font-size:12px}
+.console{font:11px/1.8 ui-monospace,SFMono-Regular,Menlo,monospace;color:#9cdebb}
+.console .prompt{color:#6596ac}.console .note{color:#97aebe}
+.flow-step{display:flex;gap:11px;border-bottom:1px solid #294657;padding:12px 0}
+.flow-step:last-child{border-bottom:0}
+.step-n{height:23px;min-width:23px;border:1px solid #527c75;background:#1d3b3e;color:#90e4b0;display:grid;place-items:center;font:900 11px monospace}
+.step-t{font-size:12px;font-weight:800}.step-d{font-size:10px;color:#9ab2bd;margin-top:3px;line-height:1.5}
+.bottom-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px;margin-top:18px}
+.footer-card{border:1px solid #29495a;background:#102330;border-radius:14px;padding:19px 21px}
+.footer-card h2{font-size:12px;letter-spacing:.12em;margin:0 0 12px}
+.footer-card p{font-size:12px;color:#a7c0cb;line-height:1.6;margin:0}
+.footer-card a{font-size:12px;font-weight:700}
+.notice{font-size:10px!important;color:#789ca8!important;margin-top:13px!important}
+@media(max-width:1140px){.layout{grid-template-columns:1fr}.sidebar{grid-template-columns:repeat(3,1fr)}.bottom-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.page{padding:14px 12px 36px}.header{margin:20px 0}.nav a{font-size:11px;padding:8px 9px}.sidebar{grid-template-columns:1fr}.bottom-grid{grid-template-columns:1fr}.room{min-width:1000px}.marquee{font-size:9px}.header p{font-size:12px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:0s!important;transition-duration:0s!important}}
+</style>
+</head>
+<body><main class="page">
+<header class="topbar">
+  <div class="brand"><div class="brand-logo">S</div><div>STONKS <span>/ AGENT SYSTEMS</span></div></div>
+  <nav class="nav"><a href="/">← PORTFOLIO</a><a href="/office" class="current">AGENT OFFICE</a>
+  {% if run %}<a href="{{run.run_url}}" rel="noreferrer">GITHUB LOGS ↗</a>{% endif %}</nav>
+</header>
+<section class="header">
+ <div><div class="eyebrow">● OPERATIONS FLOOR // WEBULL OPENAPI SANDBOX</div>
+ <h1>The Agent Office<span style="color:#8fe9be">.</span></h1>
+ <p>Seven AI specialists. One trading desk. Watch their little world come alive, inspect individual tasks, and follow the most recent verified research. This is the visual layer; the broker's safety rules remain separate.</p>
+ </div>
+ <div class="status">
+ <div class="status-pill {% if run and run.active %}active{% elif run and run.conclusion == 'success' %}ok{% elif run and run.conclusion == 'failure' %}fail{% endif %}">
+ <span class="status-light"></span>
+ {% if run and run.active %}DESK RUN IN PROGRESS{% elif run and run.queued %}RUN QUEUED{% elif run and run.conclusion == 'success' %}LAST RUN COMPLETED{% elif run and run.conclusion == 'failure' %}LAST RUN FAILED{% else %}LIVE RUN STATUS UNAVAILABLE{% endif %}
+ </div>
+ <label class="motion-option"><input id="motion" type="checkbox" checked> AMBIENT MOTION</label>
+ </div>
+</section>
+<div class="layout">
+ <section class="window" aria-label="Animated virtual research office">
+ <div class="window-head">
+ <div class="window-title"><span class="window-icon"><i></i><i></i><i></i></span> OPERATIONS FLOOR / 07 SPECIALISTS</div>
+ <span class="window-meta">{% if run and run.active %}● RESEARCH WORKFLOW ACTIVE{% else %}◌ AMBIENT MODE{% endif %} · CLICK DESKS TO INSPECT</span>
+ </div>
+ <div class="canvas-viewport" tabindex="0" aria-label="Pan right to view the whole illustrated office">
+ <div class="room">
+  <div class="skylight"></div><div class="skylight two"></div><div class="skylight three"></div>
+  <div class="wall-sign">THE <span>ALPHA</span> DESK</div>
+  <div class="deskboard"><div class="bars"><span></span><span></span><span></span><span></span></div><p>SCANNING · MARKET</p></div>
+  <div class="rail"><div class="run-pipe"></div></div>
+  <div class="room-label top">SECTOR A · RESEARCH PODS</div>
+  <div class="carpet"></div><div class="runner-line"></div>
+  {% for worker in workers %}
+   <details class="pod {% if worker.vote %}has-vote{% endif %} {% if run and run.active %}is-running{% endif %}"
+    style="--accent:{{worker.color}};--hair:{{worker.hair}}">
+     <summary aria-label="Inspect {{worker.name}} — {{worker.title}}">
+      <div class="pod-title"><div><div class="pod-name">{{worker.name}}</div>
+      <div class="pod-role">{{worker.title}}</div></div><span class="pod-led"></span></div>
+      <div class="bubble">{% if run and run.active %}···{% elif worker.vote %}{{worker.vote.action}}{% else %}ZZZ{% endif %}</div>
+      <div class="pod-ambient"><div class="signal-graph"></div></div>
+      <div class="monitor-mast"></div>
+      <div class="person"><div class="head"></div><div class="jacket"></div><span class="limb l"></span><span class="limb r"></span></div>
+      <div class="tabletop"></div>
+      <div class="pod-footer"><span class="action">{{worker.task}}</span>
+      <span class="vote">{% if worker.vote %}{{worker.vote.symbol}}{% else %}--{% endif %}</span></div>
+     </summary>
+     <div class="inspect"><h3>{{worker.name}} // {{worker.title}}</h3>
+       <p>{{worker.task}}. {{worker.detail}}.</p>
+       {% if worker.vote %}
+       <p>Last published: <strong>{{worker.vote.action}} {{worker.vote.symbol}}</strong> at {{worker.vote.confidence}} stated confidence.</p>
+       {% else %}<p>No published opinion yet — awaiting validated data.</p>{% endif %}
+       <small>Illustrated character movement does not establish a live per-agent action. Actual workflow state is shown above.</small>
+     </div>
+   </details>
+  {% endfor %}
+  <div class="planter"><div class="foliage"></div><div class="pot"></div></div>
+  <div class="planter right"><div class="foliage"></div><div class="pot"></div></div>
+  <div class="robot" aria-hidden="true"><div class="antenna"></div><div class="shell"></div></div>
+  <div class="room-label bottom">UNIT 07 // COFFEE DELIVERY BOT · AMBIENT ONLY</div>
+  <div class="floor-shadow"></div>
+ </div></div>
+ <div class="marquee"><span>◈ 7 AI SPECIALISTS · {% if agent %}{{agent.provider|upper}}{% else %}AWAITING DATA{% endif %}</span><span>⟶ AGENT APPROVAL → ORB SCANNER → WEBULL SANDBOX</span><span class="hint">Scroll sideways on smaller screens</span></div>
+ </section>
+ <aside class="sidebar" aria-label="Verified system information">
+  <section class="panel">
+    <div class="panel-head"><h2>MISSION CONTROL</h2><span>01 / 03</span></div>
+    <div class="panel-body">
+      <div class="section-tag">Latest published result</div>
+      <div class="big-number" style="font-size:23px;line-height:1.25">{% if agent %}{{agent.consensus|replace("_", " ")}}{% else %}AWAITING REPORT{% endif %}</div>
+      <div class="micro">{% if agent %}{{agent.decision}}<br>Market data: {{agent.as_of}} · {{agent.provider}}{% if agent.stale %}<br><strong style="color:#ffbf7f">STALE RESEARCH</strong>{% endif %}{% else %}No validated seven-agent publication available.{% endif %}</div>
+      <div class="metric"><span>Agent opinions</span><strong>{{agent.agents|length if agent else 0}} / 7</strong></div>
+      <div class="metric"><span>Model</span><strong>{{agent.provider|upper if agent else "N/A"}}</strong></div>
+      <div class="metric"><span>Per-agent live tracking</span><strong>NOT EXPOSED</strong></div>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>ACTIVE WORKFLOW</h2><span>02 / 03</span></div>
+    <div class="panel-body">
+      <div class="console">
+       <div><span class="prompt">›</span> research.start</div>
+       <div><span class="prompt">›</span> provider.gemini</div>
+       <div><span class="prompt">›</span> seven_roles.sequence</div>
+       <div class="note">  {% if run %}{{run.state}}{% if run.conclusion %} / {{run.conclusion}}{% endif %}{% else %}unknown{% endif %}</div>
+       <div class="note">  {% if run %}{{run.created}} UTC{% else %}last run not accessible{% endif %}</div>
+      </div>
+      {% if run %}<p class="micro"><a href="{{run.run_url}}">VIEW VERIFIED GITHUB RUN ↗</a></p>{% endif %}
+      <p class="micro">During a run, the monitors glow and avatars type. Individual role progress is not exposed by the workflow. The scene never fabricates its timing.</p>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>VIRTUAL SIM ACCOUNT</h2><span>03 / 03</span></div>
+    <div class="panel-body">
+      <div class="section-tag">Separate from Webull</div>
+      <div class="big-number">{{agent.virtual_equity if agent else "Unavailable"}}</div>
+      <div class="metric"><span>Simulated return</span><strong>{{agent.virtual_return if agent else "—"}}</strong></div>
+      <div class="metric"><span>Observed drawdown</span><strong>{{agent.virtual_drawdown if agent else "—"}}</strong></div>
+      <div class="metric"><span>Broker agent orders</span><strong>0 DIRECT</strong></div>
+      <p class="micro">Illustrative next-session paper fills are NOT Webull fills. Real sandbox orders and holdings are listed on your <a href="/">Portfolio</a>.</p>
+    </div>
+  </section>
+ </aside>
+</div>
+<section class="bottom-grid">
+ <div class="footer-card"><h2>HOW THE TEAM WORKS</h2>
+ <div class="flow-step"><span class="step-n">01</span><div><div class="step-t">Seven specialized opinions</div><div class="step-d">Market regime, technicals, news limitations, strategy, risk, leadership and review.</div></div></div>
+ <div class="flow-step"><span class="step-n">02</span><div><div class="step-t">Risk-on approval gate</div><div class="step-d">The agents can veto the existing ORB strategy, not bypass its market safeguards.</div></div></div>
+ <div class="flow-step"><span class="step-n">03</span><div><div class="step-t">Independent sandbox execution</div><div class="step-d">ORB checks market quotes, available cash, and position limits; Beethoven stays separate.</div></div></div>
+ </div>
+ <div class="footer-card"><h2>OPERATING REALITY</h2>
+ <p>These are original animated office characters inspired by pixel-office interfaces. They are visualizations of roles, not people or independent trade execution processes.</p>
+ <p class="notice">When an actual AI workflow starts, the desk animation changes. Published opinions represent the last verified report; idle animation is ambient.</p>
+ </div>
+ <div class="footer-card"><h2>QUICK ACCESS</h2>
+ <p><a href="/">→ Webull PAPER portfolio</a></p>
+ {% if run %}<p style="margin-top:13px"><a href="{{run.run_url}}">→ GitHub workflow details</a></p>{% endif %}
+ <p style="margin-top:13px"><a href="/office">→ Refresh Agent Office</a></p>
+ <p class="notice">Owner-only, read-only interface via existing Google IAP. No trading permissions added.</p>
+ </div>
+</section>
+</main></body></html>
