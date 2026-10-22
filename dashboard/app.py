@@ -709,6 +709,50 @@ def read_office_status_snapshot():
         return payload
 
 
+@app.get("/office/agent-sandbox-accounts")
+def agent_sandbox_account_candidates():
+    """Owner-only read-only sandbox account fingerprint discovery.
+
+    Never expose raw Webull account IDs. This route cannot place orders and
+    does not store enrollment, enable trading or change brokerage settings.
+    """
+    authorized_user()
+    broker = sandbox_trade_client()
+    payload = verified(broker.account_v2.get_account_list(), "sandbox accounts")
+    accounts = records(payload, ("data", "accounts", "result"))
+    if not isinstance(accounts, list):
+        abort(503)
+    candidates = []
+    for i, account in enumerate(accounts):
+        if not isinstance(account, dict):
+            abort(503)
+        account_id = account.get("account_id")
+        if not isinstance(account_id, (str, int)) or not str(account_id):
+            abort(503)
+        if i == 0:
+            # Shared with the existing Beethoven/ORB paper programs.
+            continue
+        candidates.append({
+            "index": i, "type": str(account.get("account_type", ""))[:16],
+            "fingerprint_sha256": hashlib.sha256(str(account_id).encode()).hexdigest()
+        })
+    response = make_response(app.json.response({
+        "sandbox_only": True, "orders_submitted": 0,
+        "note": ("Pick a separate CASH account only. Configure the matching "
+                 "GitHub Actions secret AI_AGENTS_ACCOUNT_SHA256 and Actions "
+                 "variables AI_AGENTS_ACCOUNT_INDEX and "
+                 "AI_AGENTS_SANDBOX_EXECUTE_ENABLED manually. "
+                 "This read-only lookup does not enable orders."),
+        "candidates": candidates
+    }))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
+
+
 @app.get("/office/status")
 def office_live_status():
     """Read-only, IAP-protected polling endpoint; never places orders."""
