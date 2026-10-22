@@ -118,7 +118,7 @@ class AgentOfficeTests(unittest.TestCase):
         result = read_office_run(opener=opener)
         self.assertEqual(result["conclusion"], "success")
         self.assertEqual(result["run_id"], 12345)
-        self.assertEqual(len(visited), 2)
+        self.assertEqual(len(visited), 3)
 
     def test_stale_workflow_never_shows_realtime_working(self):
         old = run_response("in_progress")

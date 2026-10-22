@@ -10,7 +10,9 @@ function element(dataset = {}) {
   const classes = new Set();
   const el = {
     dataset, textContent: "", style: {}, disabled: false, clientWidth: 760,
-    className:"",
+    className:"", children: [],
+    append(...items){this.children.push(...items);},
+    replaceChildren(...items){this.children=[...items];},
     classList: {
       toggle(name, force) {if (force) classes.add(name); else classes.delete(name);},
       add(name){classes.add(name);},
@@ -52,7 +54,7 @@ const ids = Object.fromEntries([
   "agent-task","agent-detail","agent-state","agent-opinion",
   "agent-confidence","agent-provenance","run-indicator","live-connection",
   "research-consensus","research-decision","research-provider","research-date",
-  "verified-count"
+  "verified-count","conversation-feed","conversation-status"
 ].map(name=>[name,element()]));
 const canvas=element();canvas.getContext=()=>painter;
 canvas.getBoundingClientRect=()=>({left:0,top:0,width:1152,height:704});
@@ -67,7 +69,11 @@ const document={
     if(name==="#verified-timeline li")return rows;
     throw Error("Unexpected DOM query: "+name);
   },
-  createElement(tag){assert.equal(tag,"canvas");return {width:0,height:0,getContext:()=>painter};},
+  createElement(tag){
+    if(tag==="canvas")return {width:0,height:0,getContext:()=>painter};
+    assert.ok(["li","span","div","strong","p","small"].includes(tag));
+    return element();
+  },
   addEventListener(name,fn){docEvents[name]=fn;}
 };
 let frames=[], timers=[], timerId=0, responseIndex=0, requests=[];
@@ -77,7 +83,11 @@ const responseFor=(stages,source="VERIFIED")=>({
  verified_count:stages.filter(s=>s!=="UNAVAILABLE").length,
  run:{state:"in_progress",active:true,queued:false,expired:false,conclusion:"",run_url:"https://github.com/williamRut261/webull-paper/actions/runs/5"},
  roles:roleNames.map((role,i)=>({role,stage:stages[i],action:"HOLD",symbol:"SPY",confidence:"50%"})),
- research:{consensus:"NO_CONSENSUS",decision:"NO EXECUTABLE AGENT DECISION",provider:"gemini",as_of:"2026-10-22",stale:false}
+ research:{consensus:"NO_CONSENSUS",decision:"NO EXECUTABLE AGENT DECISION",provider:"gemini",as_of:"2026-10-22",stale:false},
+ conversation:{available:true,last_turn:7,updated_at:"2026-10-22T17:00:00+00:00",messages:[
+   {turn:6,role:roleNames[5],name:"Atlas",text:"We need new evidence before taking a directional view.",at:"2026-10-22T16:00:00+00:00"},
+   {turn:7,role:roleNames[6],name:"Quinn",text:"Atlas, I agree that today's data remains unverified. What evidence is missing?",at:"2026-10-22T17:00:00+00:00"}
+ ]}
 });
 const stages1=["DONE","WORKING","UNAVAILABLE","UNAVAILABLE","UNAVAILABLE","UNAVAILABLE","UNAVAILABLE"];
 const stages2=["DONE","DONE","FAILED","UNAVAILABLE","UNAVAILABLE","UNAVAILABLE","UNAVAILABLE"];
@@ -135,6 +145,9 @@ assert.equal(ids["agent-state"].textContent,"UNAVAILABLE"); // Sage has no Check
 assert.equal(buttons[0].dataset.stage,"DONE");
 assert.equal(buttons[1].dataset.stage,"WORKING");
 assert.equal(ids["verified-count"].textContent,"2 / 7 verified");
+assert.equal(ids["conversation-feed"].children.length,2);
+assert.ok(ids["conversation-status"].textContent.includes("LAST TURN 7"));
+assert.ok(ids["conversation-feed"].children[1].children[1].children[1].textContent.includes("Atlas,"));
 // Poll #2: recorded success/failure transition.
 assert.equal(timers.length,1);timers.shift().fn();await flush();
 assert.equal(buttons[1].dataset.stage,"DONE");
