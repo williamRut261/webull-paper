@@ -26,6 +26,7 @@ jobs:
       WEBULL_PAPER_ACCOUNT_SHA256: ${{ secrets.WEBULL_PAPER_ACCOUNT_SHA256 }}
       WEBULL_PAPER_EXECUTE_ENABLED: "true"
       WEBULL_TRADER_PAPER_ENABLED: "true"
+      AI_DESK_PAPER_GATE_ENABLED: "true"
       WEBULL_PAPER_ACCOUNT_INDEX: "0"
     steps:
       - uses: actions/checkout@v4
