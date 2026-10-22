@@ -537,6 +537,30 @@ def office_motion():
     return response
 
 
+@app.get("/office/world.js")
+def office_world():
+    """Serve the purely visual office game client behind the same owner check."""
+    authorized_user()
+    response = make_response(app.send_static_file("office-world.js"))
+    response.headers["Cache-Control"] = "private, max-age=60"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.get("/office/sprites/<name>")
+def office_sprite(name):
+    """Only six bundled MIT-licensed sprites; no directory traversal."""
+    authorized_user()
+    if not re.fullmatch(r"char_[0-5]\\.png", name):
+        abort(404)
+    response = make_response(app.send_static_file("office-sprites/" + name))
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.get("/office")
 def office():
     authorized_user()
@@ -569,7 +593,7 @@ def office():
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
+        "default-src 'none'; script-src 'self'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'")
     return response
 
 
