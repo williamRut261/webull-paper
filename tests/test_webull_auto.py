@@ -269,6 +269,28 @@ class PaperAutomationSafetyTests(unittest.TestCase):
                     "side": "BUY", "quantity": "1"})
         trade.order_v3.place_order.assert_not_called()
 
+    def test_webull_sandbox_fractional_orders_never_exceed_five_digits(self):
+        """Webull returned HTTP 417 OPENAPI_FRACT_QTY_SCALE_LESS_5 in
+        original Beethoven paper workflow on Oct 22, 2026.
+        """
+        from decimal import Decimal
+        for side in ("BUY", "SELL"):
+            payload = paper.order_payload(
+                "GDXD", side, 12.345678, 100., "2026-10-23", 1)
+            quantity = payload["quantity"]
+            self.assertEqual(quantity, "0.12345")
+            self.assertLessEqual(-Decimal(quantity).as_tuple().exponent, 5)
+            self.assertLessEqual(Decimal(quantity) * Decimal(100), Decimal("12.345678"))
+            self.assertEqual(payload["entrust_type"], "QTY")
+        # Whole-share orders must remain whole numbers with no decimal dot.
+        self.assertEqual(
+            paper.order_payload("GDXD", "BUY", 235.85, 100., "2026-10-23", 2)["quantity"],
+            "2")
+        # A fractional order that rounds below Webull's $5 minimum must
+        # fail closed rather than silently submit an under-minimum ticket.
+        with self.assertRaisesRegex(RuntimeError, "below Webull"):
+            paper.order_payload("GDXD", "BUY", 5.00001, 9999., "2026-10-23", 3)
+
     def test_buy_sizing_preserves_cash_and_broker_limit(self):
         trade = Mock()
         snapshot = (5000.0, 5000.0, {})

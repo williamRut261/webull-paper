@@ -264,7 +264,7 @@ def order_payload(symbol,side,amount,price,day,sequence,allowed_extra=frozenset(
         raise RuntimeError("Unknown symbol/price")
     if amount<MIN_ORDER_USD or not math.isfinite(amount):
         raise RuntimeError("Order smaller than $5")
-    quantity=floor(amount/price,6)
+    quantity=floor(amount/price,5)
     if quantity<=0:
         raise RuntimeError("Zero calculated shares")
     if quantity>=1:
