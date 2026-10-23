@@ -2,49 +2,49 @@
   "actual_broker_orders_from_agents": 0,
   "agents": [
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 0.0,
       "role": "Market Analyst",
-      "symbol": "GDXD"
+      "symbol": "SPY"
     },
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 0.0,
       "role": "Technical Analyst",
-      "symbol": "GDXD"
+      "symbol": "NONE"
     },
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 0.0,
       "role": "News Researcher",
-      "symbol": "GDXD"
+      "symbol": "NONE"
     },
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 0.0,
       "role": "Strategy Analyst",
-      "symbol": "GDXD"
+      "symbol": "NONE"
     },
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 0.0,
       "role": "Risk Manager",
-      "symbol": "GDXD"
+      "symbol": "NONE"
     },
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 0.0,
       "role": "Desk Lead",
-      "symbol": "GDXD"
+      "symbol": "NONE"
     },
     {
-      "action": "HOLD",
-      "confidence": 0.6,
+      "action": "NO_TRADE",
+      "confidence": 1.0,
       "role": "Trade Reviewer",
-      "symbol": "GDXD"
+      "symbol": "NONE"
     }
   ],
-  "as_of": "2026-10-22",
+  "as_of": "2026-10-23",
   "consensus": "NO_CONSENSUS",
   "hypothesis": null,
   "note": "Separate $10,000 virtual ledger, hypothetical NEXT-session daily-close fills only; not Webull orders, live returns or an audited backtest.",
