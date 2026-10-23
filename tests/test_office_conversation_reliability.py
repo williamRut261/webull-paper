@@ -63,6 +63,25 @@ class DialogueReliabilityTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertNotIn("private user text", output.getvalue())
 
+    def test_failure_telemetry_classifies_stage_without_raw_provider_content(self):
+        for scenario in ("invalid_reply", "backend_error"):
+            with self.subTest(scenario=scenario):
+                self.state = new_state("2026-10-23")
+                def requester(*_args):
+                    if scenario == "invalid_reply":
+                        return {**entry("This is a research-only question about uncertainty."),
+                                "action": "BUY"}, {}
+                    raise ValueError("secret response payload must not escape")
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    result = run_once(self.state, {}, now=self.when,
+                                      requester=requester, publish=self.publish)
+                self.assertEqual(result, (2, "ATTEMPTED_FAILED"))
+                expected = ("RESPONSE_VALIDATION" if scenario == "invalid_reply"
+                            else "MODEL_BACKEND")
+                self.assertIn("category=" + expected, output.getvalue())
+                self.assertNotIn("secret response payload", output.getvalue())
+                self.assertEqual(len(self.state["messages"]), 0)
+
     def test_entirely_failed_hour_is_recorded_as_failed_without_extra_calls(self):
         def fail(*_args):
             raise ValueError("do not log secret provider content")
