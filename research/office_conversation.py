@@ -171,11 +171,14 @@ def run_once(state, research, *, now=None, run_id="", requester=request_opinion,
         state["calls_today"] += 1
         count += 1
         check_id = publish(role, "start")
+        phase = "provider"
         try:
             entry, _ = requester("gemini", model,
                                  instructions(role),
                                  speaker_payload(role, state, research, stamp))
+            phase = "validation"
             spoken = validate_response(entry)
+            phase = "recording"
             state["messages"].append({
                 "turn": state["turn_seq"], "role": role, "text": spoken,
                 "at": stamp.isoformat(timespec="seconds"),
@@ -186,7 +189,9 @@ def run_once(state, research, *, now=None, run_id="", requester=request_opinion,
             # Do not echo model output, prompts, provider URLs or secrets.
             # Distinguish failed validation from provider/adapter errors,
             # without exposing any untrusted exception text.
-            category = "INVALID_DIALOGUE" if isinstance(error, ValueError) else "PROVIDER_OR_TELEMETRY"
+            category = {"provider": "MODEL_BACKEND",
+                        "validation": "RESPONSE_VALIDATION",
+                        "recording": "RECORDING"}.get(phase, "UNKNOWN")
             publish(role, "failure", check_id)
             print("OFFICE_DIALOGUE_ROLE_FAILED role=" + role +
                   " category=" + category +
