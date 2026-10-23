@@ -96,15 +96,21 @@ class SimulationOnlyPerformanceTests(unittest.TestCase):
                       "--holdout", "2026-04-01", "--output", str(output)])
             self.assertFalse(output.exists())
 
-    def test_start_date_replay_is_unchanged_by_future_close_matrix_values(self):
-        # This specifically tests the no-future-data invariant in the
-        # existing fixed-rule backtest. It doesn't prove unbiased source data.
-        from backtest import run as actual
-        from strategy_engine import load_strategy
-        # We don't fabricate a legitimate historical strategy signal; keep
-        # evaluation itself subject to independent point-in-time validation.
-        self.assertTrue(callable(actual))
-        self.assertTrue(callable(load_strategy))
+    def test_actual_strategy_replay_never_exposes_future_bars_to_signals(self):
+        # Evaluator receives price history only through signal day t.
+        # The t-to-t+1 close is used strictly for simulated returns.
+        import backtest
+        small = prices(5)
+        with patch.object(backtest, "load_strategy", return_value="synthetic"), \
+             patch.object(backtest, "Evaluator") as evaluator, \
+             patch.object(backtest, "compliant_targets", side_effect=lambda x: x):
+            evaluator.return_value.evaluate.return_value = {"SPY": 1.0}
+            result = backtest.run(small, start=small.index[0], cost_bps=0)
+        self.assertEqual(len(result), 4)
+        self.assertEqual([len(call.args[1]) for call in evaluator.call_args_list],
+                         [1, 2, 3, 4])
+        self.assertEqual(result["original"].iloc[-1],
+                         small["SPY"].iloc[-1] / small["SPY"].iloc[0])
 
 
 if __name__ == "__main__":
