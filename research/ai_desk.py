@@ -297,6 +297,15 @@ def write_report(out, report):
         for row in report["agent_opinions"]:
             lines.append("| " + row["role"] + " | " + row["action"] + " "
                          + row["symbol"] + " | " + str(row["confidence"]) + " |")
+    if report.get("role_execution"):
+        lines += ["", "### Specialist execution evidence (not broker orders)", "",
+                  "| Role | Validated outcome | Elapsed (ms) |",
+                  "| --- | --- | ---: |"]
+        for row in report["role_execution"]:
+            lines.append("| " + clean_text(row["role"]) + " | " +
+                         clean_text(row["status"]) + " | " +
+                         str(row["duration_ms"]) + " |")
+        lines += ["", "Role completion verifies output format, not trading performance."]
     lines += ["", "Not financial advice. No performance or execution was verified."]
     (out / "report.md").write_text("\n".join(lines) + "\n")
 
