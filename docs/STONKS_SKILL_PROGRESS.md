@@ -32,6 +32,10 @@ Date: 2026-10-23 UTC (October 22 in Houston when initiated).
 | Add creator-aware tests | [39903500455](https://github.com/williamRut261/webull-paper/actions/runs/39903500455) | **PASS**: matched real GitHub Actions `app.slug`, protected same-run metadata; added spoofing regression. Commit `9b414897c968be43c24656ccccc291c58d3ea1c8` |
 | Vendor pinned safe skill | [39903582198](https://github.com/williamRut261/webull-paper/actions/runs/39903582198) | **PASS**: 227 Python tests, JS syntax + AgentOffice smoke, research-only smoke and Docker build; upstream MIT skill & license copied in `.agents/skills/verification-before-completion/`; commits `29b9e4b5fa5579aed844b406d2b6d2b1fc18be79`, `9500fb1380ec17eb8b15d27b9eba5ee04291164e` |
 | Integration notes | `docs/STONKS_SKILL_INTEGRATION.md` | Nine candidates, installation boundaries, implemented methods, actual verification gates, remaining work; commit `f351e90a5686730056d96d7028b6991805b7e576` |
+| Verified failure artifact | [39904075231](https://github.com/williamRut261/webull-paper/actions/runs/39904075231) | **PASS**: CLI MODEL_ERROR artifact retains first verified role and failed second role, with no error message or secret; commit `78ca0a3efb0159ec778b0c55465c9cb78b98bb0e` |
+| Human-readable telemetry | [39904097177](https://github.com/williamRut261/webull-paper/actions/runs/39904097177) | **PASS**: role/status/duration evidence table in research report; commit `8e66c9799ffe0c8d4f0f226732e0d8028e9e8112` |
+| Seven autonomous conversation roles | [39900971506](https://github.com/williamRut261/webull-paper/actions/runs/39900971506) and persisted `research/office_conversation.json` on `main` | **VERIFIED** 7 distinct roles have published research conversation turns, including Trade Reviewer. This is a separate conversation workflow: NOT proof of seven sequential trading-desk calls or Webull trades |
+| Review PR | [PR #30](https://github.com/williamRut261/webull-paper/pull/30) | **OPEN, NOT MERGED**; research/telemetry and documentation review only |
 | Progress log | This file | Tracks evidence from actual GitHub CI rather than assuming functionality; future merge/Cloud Run/broker checks remain unverified |
 
 ## Explicit no-trade scope
@@ -71,7 +75,11 @@ Date: 2026-10-23 UTC (October 22 in Houston when initiated).
 
 ## Completion and evidence summary
 
-As of this log's creation, code has progressed beyond planning to
-an isolated tested branch; **the PR and latest branch CI require final
-verification**. In particular, newly copied guidance is **not** a live
-model integration, a Cloud Run deployment, or authorization to trade.
+The branch now contains a code-level telemetry fix, security
+regressions, a pinned MIT skill, progress and integration documents, and
+[PR #30](https://github.com/williamRut261/webull-paper/pull/30) for review.
+[39904097177](https://github.com/williamRut261/webull-paper/actions/runs/39904097177)
+passed after the functional changes. Any later documentation-only commit
+still requires fresh CI before claiming that exact head passed.
+Newly copied guidance is **not** a Cloud Run deployment, profitable
+strategy, independently verified broker fill, or authorization to trade.
