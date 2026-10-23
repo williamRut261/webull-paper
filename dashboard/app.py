@@ -707,7 +707,7 @@ def read_office_status_snapshot():
                 "state": run["state"], "conclusion": run["conclusion"],
                 "active": run["active"], "queued": run["queued"],
                 "expired": run["expired"], "run_url": run["run_url"],
-                "created": run["created"]
+                "created": run["created"], "type": run.get("type", "")
             } if run else None,
             "roles": roles,
             "research": {
