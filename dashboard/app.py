@@ -496,8 +496,16 @@ def read_office_role_checks(sha, opener=urlopen, run_id=None, run_active=True):
         role = name[len("AI Office / "):]
         if role not in names:
             continue
-        if run_id is not None and item.get("external_id") != str(run_id):
-            continue
+        if run_id is not None:
+            if item.get("external_id") != str(run_id):
+                continue
+            # GitHub Checks names/external IDs are metadata, not proof of
+            # origin. Only checks issued by GitHub Actions for this workflow
+            # are eligible to show a real agent as working or completed.
+            creator = item.get("app")
+            if (not isinstance(creator, dict)
+                    or creator.get("slug") != "github-actions"):
+                continue
         status = item.get("status")
         conclusion = item.get("conclusion")
         if status == "in_progress":
