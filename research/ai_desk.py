@@ -7,6 +7,7 @@ import math
 import os
 from pathlib import Path
 import re
+import time
 from research.model_backends import PROVIDERS, configured, model_for, request_opinion
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -102,21 +103,55 @@ def clean_text(value):
     return re.sub(r"[\x00-\x1f<>|]", "", text)[:400]
 
 
+def validate_role_opinion(entry, quotes):
+    """Validate one completed provider reply BEFORE publishing a success Check.
+
+    Model JSON is untrusted; a recognized ticker/action alone does not mean
+    this specialist produced a usable research opinion.
+    """
+    if not isinstance(entry, dict):
+        raise ValueError("Missing specialist opinion")
+    symbol, action, confidence = (entry.get("symbol"), entry.get("action"),
+                                  entry.get("confidence"))
+    if (action not in ("BUY", "SELL", "HOLD", "NO_TRADE")
+            or not (symbol in quotes or (symbol == "NONE" and action == "NO_TRADE"))
+            or type(confidence) not in (int, float)
+            or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+        raise ValueError("Invalid specialist opinion")
+    if (not isinstance(entry.get("rationale"), str)
+            or len(entry["rationale"]) > 1600):
+        raise ValueError("Invalid specialist rationale")
+    for field in ("evidence", "risks"):
+        rows = entry.get(field)
+        if (not isinstance(rows, list) or len(rows) > 8
+                or any(not isinstance(v, str) or len(v) > 650 for v in rows)):
+            raise ValueError("Invalid specialist evidence or risks")
+    return entry
+
+
+def elapsed_ms(started):
+    """Bounded, monotonic role duration, not a provider billing metric."""
+    return min(600000, max(0, round((time.monotonic() - started) * 1000)))
+
+
+def verified_progress(error):
+    """Whitelist diagnostics attached by our own runner; never publish raw errors."""
+    value = getattr(error, "agent_progress", None)
+    return value if isinstance(value, dict) else {}
+
+
 def safe_report(snapshot, opinions):
     """Fail closed on malformed LLM results, and never create executable instructions."""
     allowed = set(snapshot.get("quotes", {}))
     checked = []
     for role in ROLES:
         entry = opinions.get(role)
-        if not isinstance(entry, dict):
-            raise ValueError("Missing specialist " + role)
-        symbol, action, confidence = (entry.get("symbol"), entry.get("action"),
-                                      entry.get("confidence"))
-        if (action not in ("BUY", "SELL", "HOLD", "NO_TRADE")
-            or not (symbol in allowed or (symbol == "NONE" and action == "NO_TRADE"))
-            or not isinstance(confidence, (int, float)) or isinstance(confidence, bool)
-            or not math.isfinite(confidence) or not 0 <= confidence <= 1):
-            raise ValueError("Invalid specialist opinion: " + role)
+        try:
+            validate_role_opinion(entry, allowed)
+        except ValueError as error:
+            raise ValueError("Invalid specialist opinion: " + role) from error
+        symbol, action, confidence = (entry["symbol"], entry["action"],
+                                      entry["confidence"])
         checked.append({"role": role, "symbol": symbol, "action": action,
                         "confidence": round(confidence, 3),
                         "rationale": clean_text(entry.get("rationale", "")),
@@ -143,10 +178,17 @@ def safe_report(snapshot, opinions):
 
 
 def run_agents(snapshot, model, provider="gemini", requester=request_opinion):
-    """Same seven sequential model calls; optional read-only role observability."""
+    """Seven verified specialists; each Check closes only after schema validation.
+
+    Progress is strictly role/status/duration/token counts. It contains no
+    prompts, responses, rationales, credentials, account identifiers or prices.
+    An exception retains a sanitized record of already-verified roles.
+    """
     from research.agent_check_status import publish_stage
     opinions, usage = {}, {"input_tokens": 0, "output_tokens": 0}
+    progress = []
     for role in ROLES:
+        started = time.monotonic()
         check_id = publish_stage(role, "start")
         try:
             prompt = json.dumps({"source_snapshot": snapshot, "earlier_opinions": opinions,
@@ -154,11 +196,7 @@ def run_agents(snapshot, model, provider="gemini", requester=request_opinion):
             entry, tokens = requester(provider, model, instructions(role), prompt)
             if not isinstance(entry, dict) or len(json.dumps(entry)) > 5000:
                 raise ValueError("Invalid or oversized opinion")
-            if (entry.get("symbol") not in snapshot["quotes"]
-                    and not (entry.get("symbol") == "NONE" and entry.get("action") == "NO_TRADE")):
-                raise ValueError("Specialist selected unknown symbol")
-            if entry.get("action") not in ("BUY", "SELL", "HOLD", "NO_TRADE"):
-                raise ValueError("Unsupported specialist action")
+            validate_role_opinion(entry, snapshot["quotes"])
             if not isinstance(tokens, dict):
                 raise ValueError("Invalid token usage")
             for key in usage:
@@ -166,14 +204,40 @@ def run_agents(snapshot, model, provider="gemini", requester=request_opinion):
                 if type(value) is int and 0 <= value <= 100000000:
                     usage[key] += value
             opinions[role] = entry
-        except Exception:
+        except Exception as error:
+            duration = elapsed_ms(started)
+            progress.append({"role": role, "status": "FAILED",
+                             "duration_ms": duration,
+                             "error_type": type(error).__name__})
+            evidence = {
+                "failed_role": role,
+                "completed_roles": [x["role"] for x in progress if x["status"] == "VERIFIED"],
+                "roles_attempted": len(progress),
+                "role_execution": [dict(x) for x in progress],
+                "token_usage": dict(usage),
+            }
+            # Preserve the original error class and traceback for callers.
+            # Exceptions without a writable dictionary still fail closed.
+            try:
+                error.agent_progress = evidence
+            except (AttributeError, TypeError):
+                pass
             publish_stage(role, "failure", check_id)
+            print("AI_DESK_ROLE_RESULT role=" + role + " status=FAILED" +
+                  " duration_ms=" + str(duration) +
+                  " error_type=" + type(error).__name__, flush=True)
             raise
+        duration = elapsed_ms(started)
+        progress.append({"role": role, "status": "VERIFIED",
+                         "duration_ms": duration})
         publish_stage(role, "success", check_id)
+        print("AI_DESK_ROLE_RESULT role=" + role + " status=VERIFIED" +
+              " duration_ms=" + str(duration), flush=True)
     report = safe_report(snapshot, opinions)
     report["provider"], report["model"], report["token_usage"] = provider, model, usage
+    report["role_execution"] = progress
+    report["roles_attempted"], report["roles_completed"] = len(progress), len(progress)
     return report
-
 
 def run_comparison(snapshot, requester=request_opinion):
     """Compare all *configured* providers against the same immutable price snapshot."""
@@ -186,7 +250,9 @@ def run_comparison(snapshot, requester=request_opinion):
         try:
             results[provider] = run_agents(snapshot, model, provider, requester=requester)
         except Exception as exc:
-            results[provider] = {"status": "MODEL_ERROR", "error_type": type(exc).__name__}
+            results[provider] = {"status": "MODEL_ERROR",
+                                 "error_type": type(exc).__name__,
+                                 **verified_progress(exc)}
     successful = [x for x in results.values() if x.get("status") == "RESEARCH_ONLY"]
     return {
         "status": "RESEARCH_COMPARISON" if successful else "NOT_CONFIGURED_OR_FAILED",
@@ -276,8 +342,10 @@ def main(argv=None):
             report = run_agents(snapshot, model_for(args.provider), args.provider)
     except Exception as exc:
         write_report(args.out, {"status": "MODEL_ERROR", "consensus": "NO_CONSENSUS",
-                     "actual_order_count": 0, "provider": args.provider,
-                     "error_type": type(exc).__name__})
+                     "actual_order_count": 0, "broker_connected": False,
+                     "provider": args.provider,
+                     "error_type": type(exc).__name__,
+                     **verified_progress(exc)})
         print("AI_DESK_MODEL_ERROR: " + type(exc).__name__, flush=True)
         return 2
     write_report(args.out, report)
