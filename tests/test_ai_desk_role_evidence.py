@@ -4,10 +4,12 @@ All tests are offline: no model, GitHub, Webull, or Cloud Run traffic.
 """
 import json
 import math
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
-from research.ai_desk import ROLES, run_agents, run_comparison, safe_report
+from research.ai_desk import ROLES, main, run_agents, run_comparison, safe_report
 
 
 def vote(role, *, confidence=0.5, evidence=None):
@@ -87,6 +89,34 @@ class EvidenceTests(unittest.TestCase):
             return invalid, {"input_tokens": 1, "output_tokens": 1}
         with self.assertRaises(ValueError):
             run_agents(SNAPSHOT, "offline", requester=model)
+
+    def test_main_artifact_retains_partial_failure_without_model_text(self):
+        def broken(provider, model, instruction, prompt):
+            role = json.loads(prompt)["role"]
+            if role == "Technical Analyst":
+                raise TimeoutError("private-token-should-never-be-published")
+            return vote(role), {"input_tokens": 9, "output_tokens": 2}
+        def execute(snapshot, model, provider):
+            return run_agents(snapshot, model, provider, requester=broken)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch("research.ai_desk.configured", return_value=True), \
+             patch("research.ai_desk.make_snapshot", return_value={
+                 **SNAPSHOT, "errors": {}
+             }), \
+             patch("research.ai_desk.model_for", return_value="offline-model"), \
+             patch("research.ai_desk.run_agents", side_effect=execute):
+            self.assertEqual(main(["--out", directory, "--provider", "gemini"]), 2)
+            path = Path(directory) / "report.json"
+            raw = path.read_text()
+            report = json.loads(raw)
+            self.assertEqual(report["status"], "MODEL_ERROR")
+            self.assertEqual(report["completed_roles"], ["Market Analyst"])
+            self.assertEqual(report["failed_role"], "Technical Analyst")
+            self.assertEqual(report["roles_attempted"], 2)
+            self.assertEqual(report["role_execution"][-1]["status"], "FAILED")
+            self.assertFalse(report["broker_connected"])
+            self.assertEqual(report["actual_order_count"], 0)
+            self.assertNotIn("private-token", raw)
 
     def test_comparison_keeps_partial_failed_provider_progress(self):
         def flaky(provider, model, instruction, prompt):
