@@ -289,7 +289,7 @@ class PaperAutomationSafetyTests(unittest.TestCase):
         # A fractional order that rounds below Webull's $5 minimum must
         # fail closed rather than silently submit an under-minimum ticket.
         with self.assertRaisesRegex(RuntimeError, "below Webull"):
-            paper.order_payload("GDXD", "BUY", 5.00001, 10000., "2026-10-23", 3)
+            paper.order_payload("GDXD", "BUY", 5.00001, 9999., "2026-10-23", 3)
 
     def test_buy_sizing_preserves_cash_and_broker_limit(self):
         trade = Mock()
