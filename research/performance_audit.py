@@ -76,7 +76,7 @@ def summarize_returns(returns):
         "max_drawdown_pct": round(100 * -deepest, 4),
         "daily_win_rate_pct": round(100 * len(wins) / len(values), 2),
         "positive_days": len(wins), "negative_days": len(losses), "flat_days": flat,
-        "profit_factor": round(sum(wins) / -sum(losses), 4) if losses else None,
+        "daily_gain_loss_ratio": round(sum(wins) / -sum(losses), 4) if losses else None,
         "annualized_volatility_pct": round(100 * vol * math.sqrt(TRADING_SESSIONS_YEAR), 4),
         "sharpe_zero_riskfree": round(sharpe, 4) if sharpe is not None else None,
         "sharpe_eligible": sharpe is not None,
