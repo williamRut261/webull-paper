@@ -11,7 +11,7 @@ test("seven official roles, verified stages and conversations render", async ({p
   // clock rather than weakening the real polling policy for a test.
   await page.clock.install();
   await page.goto("/office");
-  await page.clock.fastForward("31s");
+  await page.clock.fastForward(31000);
   await expect(page.getByRole("heading", {name: /the agent office/i})).toBeVisible();
   await expect(page.locator("#office-world")).toBeVisible();
   await expect(page.locator("#agent-roster .agent-btn")).toHaveCount(7);
