@@ -144,6 +144,9 @@ class AgentOfficeTests(unittest.TestCase):
              "started_at": "2026-10-22T10:04:00Z"},
             {"id": 15, "name": "AI Office / Desk Lead", "status": "in_progress"},
         ]}
+        # Only the GitHub Actions app may publish a trusted live role state.
+        for item in data["check_runs"]:
+            item["app"] = {"slug": "github-actions"}
         def opener(req, timeout):
             return Response(json.dumps(data).encode())
         states = read_office_role_checks(sha, opener=opener,
@@ -153,6 +156,28 @@ class AgentOfficeTests(unittest.TestCase):
             "Risk Manager": "FAILED"})
         self.assertNotIn("Desk Lead", states)
         self.assertEqual(read_office_role_checks(sha, opener=opener, run_id=-1), {})
+
+    def test_spoofed_app_cannot_publish_fake_live_agent_activity(self):
+        sha = "d" * 40
+        check_runs = [
+            {"id": 21, "name": "AI Office / Market Analyst",
+             "external_id": "12345", "status": "in_progress",
+             "app": {"slug": "untrusted-app"}},
+            {"id": 22, "name": "AI Office / Technical Analyst",
+             "external_id": "12345", "status": "completed",
+             "conclusion": "success", "app": {"slug": "github-actions"}},
+            {"id": 23, "name": "AI Office / Risk Manager",
+             "external_id": "12345", "status": "completed",
+             "conclusion": "success"},  # Missing creator is not trusted.
+            {"id": 24, "name": "AI Office / Desk Lead",
+             "external_id": "45678", "status": "in_progress",
+             "app": {"slug": "github-actions"}},
+        ]
+        def opener(req, timeout):
+            return Response(json.dumps({"check_runs": check_runs}).encode())
+        self.assertEqual(read_office_role_checks(
+            sha, opener=opener, run_id=12345, run_active=True),
+            {"Technical Analyst": "DONE"})
 
     def test_completed_and_queued_are_not_mistaken_for_live_execution(self):
         for state, expected in (("completed", False), ("queued", False), ("in_progress", True)):
