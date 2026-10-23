@@ -528,14 +528,14 @@ def read_office_role_checks(sha, opener=urlopen, run_id=None, run_active=True):
 # Illustrated office markup is packaged as a standalone Jinja template.
 
 
-def build_office_workers(agent, checks=None):
-    """Join exact seven known roles to last published sanitized opinions."""
+def build_office_workers(agent, checks=None, default_stage=None):
+    """Join exact seven roles; NOT_RUN is only for trusted two-call workflows."""
     opinions = {
         x["role"]: x for x in agent["agents"]
     } if agent and isinstance(agent.get("agents"), list) else {}
     checks = checks or {}
     return [
-        {"title": title, "name": name, "task": task, "detail": detail, "stage": checks.get(title),
+        {"title": title, "name": name, "task": task, "detail": detail, "stage": checks.get(title, default_stage),
          "color": color, "tag": tag, "hair": (
              "#203953", "#503a3f", "#6a4952", "#262838", "#3f3844", "#6a5d43", "#283945"
          )[i], "vote": opinions.get(title)}
@@ -675,7 +675,12 @@ def read_office_status_snapshot():
                                type(error).__name__)
             conversation = {"available": False, "messages": [], "last_turn": 0,
                             "updated_at": None}
-        rows = build_office_workers(agent, statuses)
+        # An hourly dialogue only attempts two of seven specialists; the
+        # other five were NOT_RUN in this selected run, not failed or broken.
+        not_run = ("NOT_RUN" if source == "VERIFIED" and run and
+                   run.get("type") == "Autonomous research conversation"
+                   else None)
+        rows = build_office_workers(agent, statuses, default_stage=not_run)
         roles = [
             {"role": row["title"], "stage": row["stage"] or "UNAVAILABLE",
              "action": (row["vote"] or {}).get("action", "UNAVAILABLE"),
@@ -819,17 +824,25 @@ def office():
         app.logger.warning(
             "office_action_status_unavailable exception_type=%s", type(error).__name__)
         run = None
+    checks_verified = run is not None
     try:
         checks = read_office_role_checks(
             run.get("head_sha"), run_id=run.get("run_id"),
             run_active=run.get("active", False)
         ) if run else {}
     except Exception as error:
+        checks_verified = False
         app.logger.warning(
             "office_role_status_unavailable exception_type=%s", type(error).__name__)
         checks = {}
+    # Missing Checks are NOT_RUN only if the scoped GitHub check read
+    # completed successfully for the two-attempt conversation workflow.
+    default_stage = ("NOT_RUN" if run and
+                     run.get("type") == "Autonomous research conversation"
+                     and checks_verified else None)
     response = make_response(render_template(
-        "office.html", workers=build_office_workers(agent, checks),
+        "office.html", workers=build_office_workers(
+            agent, checks, default_stage=default_stage),
         agent=agent, run=run, checks=checks))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
