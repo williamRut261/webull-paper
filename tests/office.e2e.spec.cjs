@@ -7,7 +7,11 @@ const { test, expect } = require("@playwright/test");
 test.use({ baseURL: "http://127.0.0.1:18765" });
 
 test("seven official roles, verified stages and conversations render", async ({page}) => {
+  // Production polls GitHub at bounded intervals; fast-forward the browser
+  // clock rather than weakening the real polling policy for a test.
+  await page.clock.install();
   await page.goto("/office");
+  await page.clock.fastForward("31s");
   await expect(page.getByRole("heading", {name: /the agent office/i})).toBeVisible();
   await expect(page.locator("#office-world")).toBeVisible();
   await expect(page.locator("#agent-roster .agent-btn")).toHaveCount(7);
@@ -41,7 +45,7 @@ test("no exposed order forms or credentials in browser status payload", async ({
   const data = await response.json();
   expect(data.roles).toHaveLength(7);
   expect(data.conversation.available).toBeTruthy();
-  expect(data.run.run_id).toBe(12345);
+  expect(data.run.run_url).toContain("/actions/runs/12345");
   const serialized = JSON.stringify(data).toLowerCase();
   for (const secret of ["api_secret", "access_token", "account_id", "order_payload"]) {
     expect(serialized).not.toContain(secret);
