@@ -63,7 +63,7 @@ class OfficeConversationTests(unittest.TestCase):
         self.state["calls_today"] = MAX_CALLS_DAY - 1
         def failure(*args):
             raise RuntimeError("private-provider-error")
-        self.assertEqual(self.session(requester=failure), (1, "ATTEMPTED"))
+        self.assertEqual(self.session(requester=failure), (1, "ATTEMPTED_FAILED"))
         self.assertEqual(self.state["calls_today"], MAX_CALLS_DAY)
         self.assertEqual(self.state["messages"], [])
         self.assertEqual(self.events, [(ROLES[0], "start"), (ROLES[0], "failure")])
