@@ -24,7 +24,7 @@ test("seven official roles, verified stages and conversations render", async ({p
   await expect(page.locator("#agent-state")).toHaveText("FAILED");
   await page.locator('#agent-roster .agent-btn[data-name="Theo"]').click();
   await expect(page.locator("#agent-state")).toHaveText("DONE");
-  await expect(page.locator("#research-consensus")).toContainText("NO_CONSENSUS");
+  await expect(page.locator("#research-consensus")).toContainText("NO CONSENSUS");
 });
 
 test("animations can be paused without changing agent run evidence", async ({page}) => {
