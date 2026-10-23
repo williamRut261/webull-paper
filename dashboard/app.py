@@ -761,6 +761,36 @@ def agent_sandbox_account_candidates():
     return response
 
 
+@app.get("/office/release")
+def office_release_marker():
+    """Authenticated, no-secret deployment identity for source-vs-runtime checks.
+
+    The SHA is operator-declared at deployment, not cryptographic attestation
+    and not a claim that backend data or brokerage orders are current.
+    """
+    authorized_user()
+    declared_sha = str(os.getenv("STONKS_CODE_SHA", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", declared_sha):
+        declared_sha = "UNVERIFIED"
+    revision = str(os.getenv("K_REVISION", ""))
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,100}", revision):
+        revision = "UNAVAILABLE"
+    response = make_response(app.json.response({
+        "service": "webull-paper-viewer",
+        "revision": revision,
+        "declared_source_sha": declared_sha,
+        "source_sha_verified": False,
+        "note": ("Build source SHA is operator-declared; verify Cloud Run build "
+                 "and service revision independently. No broker or market data checked."),
+    }))
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    return response
+
+
 @app.get("/office/status")
 def office_live_status():
     """Read-only, IAP-protected polling endpoint; never places orders."""

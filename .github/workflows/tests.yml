@@ -17,5 +17,25 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: node --check dashboard/static/office-world.js
       - run: node tests/office-world-smoke.cjs
+      - name: Install isolated browser-test dependencies (never trading)
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts @playwright/test@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Smoke-test actual AgentOffice page in Chromium (synthetic read-only fixture)
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=.
+          export STONKS_OFFICE_E2E=true
+          python tests/office_playwright_fixture.py > /tmp/stonks-office-e2e.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:18765/office > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --silent --show-error --fail http://127.0.0.1:18765/office > /dev/null
+          npx playwright test tests/office.e2e.spec.cjs --reporter=line --workers=1
       - run: python -m research.ai_desk --smoke --out /tmp/ai-desk-smoke
       - run: docker build --file dashboard/Dockerfile --tag paper-viewer-test dashboard
