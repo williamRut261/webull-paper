@@ -83,3 +83,40 @@ passed after the functional changes. Any later documentation-only commit
 still requires fresh CI before claiming that exact head passed.
 Newly copied guidance is **not** a Cloud Run deployment, profitable
 strategy, independently verified broker fill, or authorization to trade.
+
+
+## Continuation after earlier review (2026-10-23 UTC)
+
+- **PR #30 merged**: `9c44108e4970f2b7b304d11a2ff619d265a4edfa`.
+  Verified [GitHub run 39904270113](https://github.com/williamRut261/webull-paper/actions/runs/39904270113):
+  228 Python tests, JS smoke, research smoke and Docker build.
+- **PR #31 merged**: `95e849ae56fd6d7f14f5914fda1f68580eea6fde`.
+  Verified [GitHub run 39905116899](https://github.com/williamRut261/webull-paper/actions/runs/39905116899):
+  229 Python tests, JS smoke and Docker. Original sandbox order
+  six-decimal defect fixed without changing trades or risk limits.
+  No Webull order was submitted as part of this fix.
+- **Fixed-rule simulation and browser E2E**: separate branch
+  `feature/stonks-readonly-performance-audit-20261023`.
+  Existing strategy close-to-close analysis now supports a labeled
+  >=30-observation historical holdout and conservative drawdown and
+  daily-risk statistics, when verified adjusted closes are supplied.
+  No historical market dataset was provided, so no returns claimed.
+- **Chromium E2E red-green debugging**: [39905991264](https://github.com/williamRut261/webull-paper/actions/runs/39905991264)
+  found that a 15s test incorrectly expected a status refreshed by the
+  real app only after 30s; [39906220954](https://github.com/williamRut261/webull-paper/actions/runs/39906220954)
+  then exposed invalid `clock.fastForward("31s")` syntax and a
+  test-only assumption about run IDs in a sanitized response. The
+  assertions were corrected on the same branch; **do not mark E2E
+  completed until its newest GitHub CI run passes**.
+- **Private deployment identifier**: the new IAP-only
+  `/office/release` endpoint returns sanitized, explicitly
+  `source_sha_verified=false` source metadata. It does not prove
+  Cloud Run provenance without a separate GCP revision check.
+- **Cloud Run remains not deployed by this assistant**:
+  no GCP execution connector or authenticated Cloud Shell session
+  available. Use `docs/STONKS_CLOUD_RUN_DEPLOYMENT.md` to deploy
+  reviewed main with strict IAP and independently verify the
+  declared SHA and Cloud Run ready revision.
+- The separate Webull seven-agent SANDBOX account's actual
+  credentials, API login, order preview and broker fills remain
+  unverified; no orders were initiated in this task.
