@@ -103,7 +103,7 @@ def instructions(role):
         "No live quotes, real-time prices or verified headlines are supplied. "
         "NEVER claim to have checked them, invent facts, predict returns, or imply "
         "you are placing orders. The trading system does not ingest this chat. "
-        "Provide one concise conversational statement, 25-65 words, addressed "
+        "Provide one concise conversational statement, 20-40 words AND no more than 280 characters, addressed "
         "to the previous speaker. Put the conversational statement in 'rationale'. "
         "Reply as a JSON object with keys: symbol equal to SPY, action equal "
         "to HOLD, confidence equal to 0.5, rationale equal to your spoken reply, "
@@ -133,9 +133,15 @@ def validate_response(entry):
     if not isinstance(entry, dict) or entry.get("action") != "HOLD" or entry.get("symbol") != "SPY":
         raise ValueError("Unexpected model reply structure")
     if (not isinstance(entry.get("rationale"), str)
-            or not 20 <= len(entry["rationale"]) <= 300):
+            or not 20 <= len(entry["rationale"]) <= 1600):
         raise ValueError("Malformed conversational reply")
     message = clean_text(entry["rationale"]).strip()
+    if len(message) > 300:
+        # The provider allows a longer well-formed rationale than the
+        # published 300-character UI limit. Truncate at a word boundary
+        # rather than discarding an otherwise safe and useful answer.
+        excerpt = message[:299].rsplit(" ", 1)[0].rstrip()
+        message = (excerpt if len(excerpt) >= 20 else message[:299]) + "…"
     if len(message) < 20:
         raise ValueError("Reply removed by output sanitization")
     return message
@@ -158,7 +164,7 @@ def run_once(state, research, *, now=None, run_id="", requester=request_opinion,
         return 0, "DAILY_CALL_LIMIT"
     # Mark this UTC hour before attempts: retries never double-charge models.
     state["last_hour"] = hour
-    count = 0
+    count, failures = 0, 0
     for _ in range(min(MAX_CALLS_SESSION, MAX_CALLS_DAY - state["calls_today"])):
         role = ROLES[state["turn_seq"] % len(ROLES)]
         state["turn_seq"] += 1
@@ -176,15 +182,22 @@ def run_once(state, research, *, now=None, run_id="", requester=request_opinion,
             })
             state["messages"] = state["messages"][-MAX_MESSAGES:]
         except Exception as error:
+            failures += 1
             # Do not echo model output, prompts, provider URLs or secrets.
+            # Distinguish failed validation from provider/adapter errors,
+            # without exposing any untrusted exception text.
+            category = "INVALID_DIALOGUE" if isinstance(error, ValueError) else "PROVIDER_OR_TELEMETRY"
             publish(role, "failure", check_id)
             print("OFFICE_DIALOGUE_ROLE_FAILED role=" + role +
+                  " category=" + category +
                   " class=" + type(error).__name__, flush=True)
         else:
             publish(role, "success", check_id)
             print("OFFICE_DIALOGUE_ROLE_OK role=" + role +
                   " turn=" + str(state["turn_seq"]), flush=True)
-    return count, "ATTEMPTED"
+    reason = ("ATTEMPTED_FAILED" if failures == count else
+              "ATTEMPTED_PARTIAL" if failures else "ATTEMPTED")
+    return count, reason
 
 
 def write_state(path, state):
@@ -217,7 +230,10 @@ def main(argv=None):
     print("OFFICE_DIALOGUE " + reason + " calls=" + str(count) +
           " daily=" + str(state["calls_today"]) + "/" + str(MAX_CALLS_DAY) +
           " recorded=" + str(len(state["messages"])), flush=True)
-    return 0
+    # A model failure should not be hidden behind a successful workflow.
+    # The workflow's persist step runs if: always(), so prior successful
+    # replies and the daily no-retry claim are still committed.
+    return 1 if reason in ("ATTEMPTED_PARTIAL", "ATTEMPTED_FAILED") else 0
 
 
 if __name__ == "__main__":
