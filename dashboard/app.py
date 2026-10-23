@@ -528,6 +528,17 @@ def read_office_role_checks(sha, opener=urlopen, run_id=None, run_active=True):
 # Illustrated office markup is packaged as a standalone Jinja template.
 
 
+def has_scoped_hourly_run(run):
+    """Never claim NOT_RUN if the selected run lacks trustworthy Check scope."""
+    return bool(
+        isinstance(run, dict)
+        and run.get("type") == "Autonomous research conversation"
+        and isinstance(run.get("head_sha"), str)
+        and re.fullmatch(r"[0-9a-f]{40}", run["head_sha"])
+        and type(run.get("run_id")) is int and run["run_id"] > 0
+    )
+
+
 def build_office_workers(agent, checks=None, default_stage=None):
     """Join exact seven roles; NOT_RUN is only for trusted two-call workflows."""
     opinions = {
@@ -677,9 +688,8 @@ def read_office_status_snapshot():
                             "updated_at": None}
         # An hourly dialogue only attempts two of seven specialists; the
         # other five were NOT_RUN in this selected run, not failed or broken.
-        not_run = ("NOT_RUN" if source == "VERIFIED" and run and
-                   run.get("type") == "Autonomous research conversation"
-                   else None)
+        not_run = ("NOT_RUN" if source == "VERIFIED" and
+                   has_scoped_hourly_run(run) else None)
         rows = build_office_workers(agent, statuses, default_stage=not_run)
         roles = [
             {"role": row["title"], "stage": row["stage"] or "UNAVAILABLE",
@@ -824,7 +834,7 @@ def office():
         app.logger.warning(
             "office_action_status_unavailable exception_type=%s", type(error).__name__)
         run = None
-    checks_verified = run is not None
+    checks_verified = has_scoped_hourly_run(run)
     try:
         checks = read_office_role_checks(
             run.get("head_sha"), run_id=run.get("run_id"),
@@ -837,9 +847,7 @@ def office():
         checks = {}
     # Missing Checks are NOT_RUN only if the scoped GitHub check read
     # completed successfully for the two-attempt conversation workflow.
-    default_stage = ("NOT_RUN" if run and
-                     run.get("type") == "Autonomous research conversation"
-                     and checks_verified else None)
+    default_stage = ("NOT_RUN" if checks_verified else None)
     response = make_response(render_template(
         "office.html", workers=build_office_workers(
             agent, checks, default_stage=default_stage),
