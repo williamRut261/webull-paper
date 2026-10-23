@@ -20,11 +20,11 @@ claims cannot be verified in this workspace and are not counted below.
 | `addyosmani/agent-skills:skills/observability-and-instrumentation/SKILL.md` | **Reviewed, applied as a method; not installed** | Bounded per-agent timings, sanitized outcomes, original failures |
 | `addyosmani/agent-skills:skills/test-driven-development/SKILL.md` | **Reviewed, applied as a method; not installed** | Red-green regression for false agent success and partial failures |
 | `addyosmani/agent-skills:skills/security-and-hardening/SKILL.md` | **Reviewed, applied as a method; not installed** | No secrets in logs; validate GitHub Checks creator and run ID |
-| `wshobson/agents:plugins/quantitative-trading/skills/backtesting-frameworks/SKILL.md` | **Reviewed, deferred** | Backtests need separate point-in-time data and realistic cost study; avoid arbitrary trading strategy changes |
+| `wshobson/agents:plugins/quantitative-trading/skills/backtesting-frameworks/SKILL.md` | **Reviewed, applied in limited read-only form; not installed** | Fixed-rule holdout replay of original/compliant with user-supplied dates and explicit fill/cost assumptions; no intraday strategy results |
 | `addyosmani/agent-skills:skills/ci-cd-and-automation/SKILL.md` | **Reviewed, applied as a method; not installed** | Existing PR CI runs full unit suite, JS smoke, research smoke, Docker build |
-| `microsoft/playwright-cli:skills/playwright-cli/SKILL.md` | **Reviewed, deferred** | Requires explicit browser-capable environment and package security review; JS smoke already exists |
+| `microsoft/playwright-cli:skills/playwright-cli/SKILL.md` | **Reviewed, applied as testing method; not installed** | Pinned `@playwright/test@1.56.1` runs real Chromium on local synthetic test fixture; no external browser control or credentials |
 | `guanyang/open-agent-hub:skills/multi-agent-patterns/SKILL.md` | **Reviewed, deferred** | Existing seven roles and sequential handoffs work; redesign adds risk without demonstrated bottleneck |
-| `wshobson/agents:plugins/quantitative-trading/skills/risk-metrics-calculation/SKILL.md` | **Reviewed, deferred** | No independent, sufficient broker trade history to calculate credible strategy risk statistics |
+| `wshobson/agents:plugins/quantitative-trading/skills/risk-metrics-calculation/SKILL.md` | **Reviewed, applied to clearly simulated results; not installed** | Hypothetical max drawdown, daily volatility and >=30-observation Sharpe; broker statistics still unavailable |
 
 The reviewed `verification-before-completion` skill was sourced from
 [obra/superpowers](https://github.com/obra/superpowers), commit
@@ -136,3 +136,33 @@ additional authenticated external checks remain explicitly **unverified**.
 - https://skills.sh/microsoft/playwright-cli/playwright-cli
 - https://skills.sh/guanyang/open-agent-hub/multi-agent-patterns
 - https://skills.sh/wshobson/agents/risk-metrics-calculation
+
+
+## Post-merge hardening extensions (2026-10-23 UTC)
+
+- [PR #30](https://github.com/williamRut261/webull-paper/pull/30) merged as
+  `9c44108e4970f2b7b304d11a2ff619d265a4edfa`. Strict seven-agent
+  runtime/telemetry validation and dashboard source checks are in main.
+- [PR #31](https://github.com/williamRut261/webull-paper/pull/31) merged as
+  `95e849ae56fd6d7f14f5914fda1f68580eea6fde`. Original Beethoven
+  Webull PAPER fractional quantities now round DOWN to five decimals,
+  preventing the known HTTP 417 six-decimal violation; account fills
+  still require external confirmation.
+- A separate research/UI PR (this branch) adds:
+  `research/performance_audit.py`,
+  `tests/test_performance_audit.py`,
+  `docs/STONKS_BACKTEST_AUDIT.md`,
+  `tests/office_playwright_fixture.py`,
+  `tests/office.e2e.spec.cjs`, `tests/test_release_proof.py`,
+  an IAP-only `/office/release` endpoint,
+  `docs/STONKS_CLOUD_RUN_DEPLOYMENT.md` and a pinned Playwright
+  CI-only dependency.
+- Playwright browser testing requires no Webull credentials: only
+  localhost, synthetic statuses and test-process monkeypatching.
+  Browser code is **not** part of the deployed Docker image.
+- The new fixed-rule backtest is **not an ORB backtest** and cannot
+  verify seven-agent profitability; without user-supplied dated market
+  data it emits no performance report. No self-evolving trade rules
+  or unverified parameter optimization have been introduced.
+- No new trade activation, brokerage orders, cloud deployments or
+  live-money operations are part of these repository changes.
