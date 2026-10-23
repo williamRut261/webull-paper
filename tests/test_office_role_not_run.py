@@ -41,6 +41,18 @@ class NotRunTests(unittest.TestCase):
         ])
         self.assertIn("Autonomous research conversation", result["run"]["type"])
 
+    def test_missing_immutable_run_sha_cannot_invent_not_run_stage(self):
+        invalid = sample_run()
+        invalid["head_sha"] = None
+        with patch("dashboard.app.read_office_run", return_value=invalid), \
+             patch("dashboard.app.read_agent_feed", return_value=None), \
+             patch("dashboard.app.read_office_conversation", return_value={
+                 "available": False, "last_turn": 0, "messages": []}):
+            snapshot = read_office_status_snapshot()
+        self.assertEqual([r["stage"] for r in snapshot["roles"]],
+                         ["UNAVAILABLE"] * 7)
+        self.assertEqual(snapshot["verified_count"], 0)
+
     def test_unreachable_check_api_is_not_mislabeled_not_run(self):
         with patch("dashboard.app.read_office_run", return_value=sample_run()), \
              patch("dashboard.app.read_office_role_checks",
