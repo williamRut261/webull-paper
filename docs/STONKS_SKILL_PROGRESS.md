@@ -120,3 +120,58 @@ strategy, independently verified broker fill, or authorization to trade.
 - The separate Webull seven-agent SANDBOX account's actual
   credentials, API login, order preview and broker fills remain
   unverified; no orders were initiated in this task.
+
+
+## 2026-10-23 UTC — Continued live-office reliability investigation
+
+Observed user-provided authenticated Cloud Run JSON:
+- Cloud Run revision `webull-paper-viewer-00016-4qk` serving 100% of traffic,
+  declared commit `a1a48108be957845d666d516629a2068b66a21e9`.
+- `/office/status` indicated hourly GitHub workflow
+  [39906338272](https://github.com/williamRut261/webull-paper/actions/runs/39906338272),
+  research `NO_CONSENSUS`, 23 published conversation turns,
+  Technical Analyst DONE, News Researcher FAILED, five UNAVAILABLE,
+  `verified_count=2`.
+- Direct GitHub job log and Check evidence confirmed:
+  `OFFICE_DIALOGUE_ROLE_OK role=Technical Analyst turn=23`;
+  `OFFICE_DIALOGUE_ROLE_FAILED role=News Researcher class=ValueError`.
+  The exact provider text was not retained; **the underlying source of
+  that specific ValueError is unknown**, not independently diagnosable.
+  The workflow returned overall success despite the specialist failure.
+- The existing office prompt permitted 25–65 words, but
+  `validate_response` rejected otherwise valid rationale above
+  **300 characters**, which is a reproducible local contradiction.
+- Hourly GitHub Actions **attempts only two specialist replies per run**,
+  so the other five UNAVAILABLE labels were misleading to viewers:
+  their absence of Checks was expected, not a five-agent outage.
+
+Remediation on branch
+`fix/stonks-conversation-reliability-20261023`:
+1. Shorter 20–40 word and 280-character model instruction. A well-formed
+   rationale up to the provider's 1600-character parsing limit is
+   sanitized and clipped to 300 characters at a word boundary; missing,
+   non-HOLD or wrong-symbol outputs **still fail closed**.
+2. Per-run result becomes `ATTEMPTED`, `ATTEMPTED_PARTIAL` or
+   `ATTEMPTED_FAILED`. The main workflow now exits nonzero when any
+   attempted role fails, while `if: always()` still persists sanitized
+   previous successes and the daily no-retry marker. The daily 48-call
+   ceiling and maximum two calls/hour are **unchanged**.
+3. Sanitized `MODEL_BACKEND`, `RESPONSE_VALIDATION`, or
+   `RECORDING` categories identify failure stages without printing
+   prompts, provider exception text, account data or credentials.
+4. AgentOffice now explicitly displays **NOT RUN** for specialists
+   omitted from a successfully verified two-call hourly conversation.
+   A failed GitHub Check remains FAILED; unavailable GitHub metadata
+   still produces UNAVAILABLE, never invented successes.
+5. Add offline regressions for long valid responses, malformed
+   nontrading checks, partial and total failures, budget/idempotence,
+   dashboard API and HTML semantics, source outages and sensitive
+   error-message non-disclosure.
+
+**No live brokerage or SANDBOX order was submitted; no trading flags,
+account pins, allocations, risk gates, schedules or model-call caps
+changed.** Running new code in the already deployed Cloud Run service
+requires an explicit authenticated redeployment of reviewed main.
+
+Verification evidence should be appended as a separate GitHub PR
+comment after the latest branch and merged-main CI complete.

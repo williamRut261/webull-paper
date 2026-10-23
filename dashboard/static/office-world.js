@@ -302,6 +302,8 @@
     put("agent-confidence",a.confidence||"UNAVAILABLE");
     put("agent-provenance",a.stage==="WORKING"?
       "WORKING is verified from the current GitHub research-run Check. Decorative walking is not execution.":
+      a.stage==="NOT_RUN"?
+      "This agent was not called in the selected two-attempt hourly conversation run; this is expected, not a failure.":
       "This stage reflects the selected GitHub run's Check, or UNAVAILABLE when no validated Check exists. Opinions are the last published research, not live trades.");
     if(follow)center(index);
   }
@@ -312,7 +314,7 @@
   }
   // Poll ONLY the IAP-protected same-origin, read-only status endpoint.
   // Never derive WORKING from ambient animation, opinions or workflow-level CI.
-  const validStages = new Set(["WORKING", "DONE", "FAILED", "QUEUED", "STALE", "UNAVAILABLE"]);
+  const validStages = new Set(["WORKING", "DONE", "FAILED", "QUEUED", "STALE", "NOT_RUN", "UNAVAILABLE"]);
   const validActions = new Set(["BUY", "SELL", "HOLD", "NO_TRADE", "UNAVAILABLE"]);
   const timelineRows = Array.from(document.querySelectorAll("#verified-timeline li"));
   const statusLabel = document.getElementById("live-connection");
@@ -439,14 +441,15 @@
         pill.className = "state " + ({
           WORKING:"work", DONE:"done", FAILED:"failed", STALE:"stale"
         }[stage] || "");
-        pill.textContent = stage === "UNAVAILABLE" ? "N/A" : stage;
+        pill.textContent = stage === "UNAVAILABLE" ? "N/A" : stage === "NOT_RUN" ? "NOT RUN" : stage;
       }
       if (timelineRows[i]) {
         const state = timelineRows[i].querySelector(".role-stage");
         const proof = timelineRows[i].querySelector(".role-proof");
         const dot = timelineRows[i].querySelector(".dot");
         if (state) state.textContent = stage;
-        if (proof) proof.textContent = stage === "UNAVAILABLE" ?
+        if (proof) proof.textContent = stage === "NOT_RUN" ?
+          "Not attempted in this hourly run" : stage === "UNAVAILABLE" ?
           "No verified Check for this run" : "Verified GitHub Check";
         if (dot) dot.className = "dot " + ({
           WORKING:"work", DONE:"done", FAILED:"failed"
