@@ -11,7 +11,7 @@ import unittest
 from research.ai_desk import ROLES
 from research.agent_sandbox_executor import (
     ALLOWED, MAX_POSITION_FRACTION, approved_ticket, build_payload,
-    check_dedicated_account, claim_day, execute_one, load_report,
+    check_shared_account, claim_day, execute_one, load_report,
     session_guard, verify_order_book, build_sell_payload,
 )
 from webull_paper.signal_dry_run import NY
@@ -85,16 +85,17 @@ class AgentsSandboxTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             approved_ticket(x,self.NOW.date())
 
-    def test_requires_distinct_pin_and_cash(self):
+    def test_requires_shared_index_zero_cash_and_existing_orb_pin(self):
         broker=Broker()
-        pin=hashlib.sha256(b"isolated-agents").hexdigest()
-        self.assertEqual(check_dedicated_account(broker,"1",pin),"isolated-agents")
-        for idx,fingerprint in [("0",pin),("1","0"*64),("5",pin),("",pin)]:
-            with self.subTest(index=idx),self.assertRaises(RuntimeError):
-                check_dedicated_account(broker,idx,fingerprint)
+        pin=hashlib.sha256(b"original-beethoven").hexdigest()
         with patch.dict("os.environ",{"WEBULL_PAPER_ACCOUNT_SHA256":pin}):
+            self.assertEqual(check_shared_account(broker,"0",pin),"original-beethoven")
+            for idx,fingerprint in [("1",pin),("0","0"*64),("5",pin),("",pin)]:
+                with self.subTest(index=idx),self.assertRaises(RuntimeError):
+                    check_shared_account(broker,idx,fingerprint)
+        with patch.dict("os.environ",{"WEBULL_PAPER_ACCOUNT_SHA256":"0"*64}):
             with self.assertRaises(RuntimeError):
-                check_dedicated_account(broker,"1",pin)
+                check_shared_account(broker,"0",pin)
 
     def test_no_orders_away_from_market_or_after_close(self):
         session_guard(self.NOW)
@@ -102,31 +103,34 @@ class AgentsSandboxTests(unittest.TestCase):
             with self.subTest(hour=hour),self.assertRaises(RuntimeError):
                 session_guard(self.NOW.replace(hour=hour,minute=minute))
 
-    def test_one_fifth_of_existing_ten_percent_allocation_is_not_allowed(self):
+    def test_agents_cap_at_495_percent_equity_with_one_percent_cash(self):
+        from decimal import Decimal
         ticket=build_payload("SPY",600.,5000.,5000.,"2026-10-22")
         self.assertEqual(ticket["side"],"BUY")
         self.assertEqual(ticket["client_order_id"],"ag20261022BSPY")
-        self.assertLessEqual(float(ticket["quantity"])*600,
-                             5000*MAX_POSITION_FRACTION)
-        self.assertEqual(ticket["quantity"],"0.41666")
-        self.assertLessEqual(len(ticket["quantity"].split(".")[1]),5)
-        self.assertGreaterEqual(float(ticket["quantity"])*600,5.)
+        self.assertEqual(ticket["quantity"],"4")
+        self.assertEqual(MAX_POSITION_FRACTION,.495)
+        self.assertLessEqual(float(ticket["quantity"])*600.,2475.)
+        self.assertLessEqual(-Decimal(ticket["quantity"]).as_tuple().exponent,5)
         with self.assertRaises(RuntimeError):
             build_payload("GDXD",25.,5000.,5000.,"2026-10-22")
         with self.assertRaises(RuntimeError):
             build_payload("SPY",600.,10.,10.,"2026-10-22")
 
-    def test_history_never_accepts_other_bot_or_repeat_orders(self):
+    def test_history_allows_orb_but_blocks_agent_retry_or_unmanaged_order(self):
         broker=Broker()
-        verify_order_book(broker,"isolated-agents","2026-10-22")
+        verify_order_book(broker,"original-beethoven","2026-10-22")
+        broker.order_v3.get_order_history=lambda *a,**kw:R([
+            {"client_order_id":"tr20261022B01XLE","create_time":"2026-10-22"}])
+        verify_order_book(broker,"original-beethoven","2026-10-22")
         broker.order_v3.get_order_history=lambda *a,**kw:R([
             {"client_order_id":"bt20261022B01SPY","create_time":"2026-10-22"}])
         with self.assertRaises(RuntimeError):
-            verify_order_book(broker,"isolated-agents","2026-10-22")
+            verify_order_book(broker,"original-beethoven","2026-10-22")
         broker.order_v3.get_order_history=lambda *a,**kw:R([
             {"client_order_id":"ag20261022BSPY","create_time":"2026-10-22"}])
         with self.assertRaises(RuntimeError):
-            verify_order_book(broker,"isolated-agents","2026-10-22")
+            verify_order_book(broker,"original-beethoven","2026-10-22")
 
     def test_dry_run_collects_real_timestamped_quotes_without_broker_write(self):
         broker=Broker()
@@ -182,6 +186,9 @@ class AgentsSandboxTests(unittest.TestCase):
         quotes["SPY"]=600.
         quotes.trade_times["SPY"]=self.NOW
         holdings={"SPY":{"qty":.25,"price":600.,"value":150.}}
+        broker.order_v3.get_order_history=lambda *a,**kw:R([
+            {"client_order_id":"ag20261021BSPY","symbol":"SPY",
+             "order_status":"FILLED","create_time":"2026-10-21"}])
         ticket={"symbol":"SPY","side":"SELL"}
         with patch("research.agent_sandbox_executor.collect_snapshots",
                    return_value=(quotes,{})), \
@@ -220,7 +227,7 @@ class AgentsSandboxTests(unittest.TestCase):
                     self.assertEqual(response.headers["Cache-Control"],"private, no-store")
                     self.assertEqual(response.json["orders_submitted"],0)
                     self.assertEqual(len(response.json["candidates"]),1)
-                    self.assertEqual(response.json["candidates"][0]["index"],1)
+                    self.assertEqual(response.json["candidates"][0]["index"],0)
                     self.assertEqual(response.json["candidates"][0]["type"],"CASH")
                     self.assertNotIn("isolated-agents",response.get_data(as_text=True))
                     self.assertNotIn("original-beethoven",response.get_data(as_text=True))
@@ -236,6 +243,8 @@ class AgentsSandboxTests(unittest.TestCase):
         workflow=(Path(__file__).resolve().parents[1]/
                   ".github/workflows/seven-agent-sandbox.yml").read_text()
         self.assertIn("vars.AI_AGENTS_SANDBOX_EXECUTE_ENABLED == 'true'",workflow)
+        self.assertIn("vars.WEBULL_SHARED_5050_ENABLED == 'true'",workflow)
+        self.assertIn('WEBULL_PAPER_ACCOUNT_INDEX: "0"',workflow)
         self.assertIn("contents: read",workflow)
         self.assertIn("group: webull-paper-order",workflow)
         self.assertIn("github.event_name == 'schedule'",workflow)
