@@ -1,4 +1,4 @@
-name: AI Trading Desk (RESEARCH ONLY - NO BROKER ORDERS)
+name: AI Trading Desk (SEVEN-PERSON RISK REVIEW FOR PAPER EXECUTOR)
 on:
   workflow_dispatch:
     inputs:
@@ -12,10 +12,14 @@ on:
         type: choice
         description: Symbol to include in seven-agent research
         required: true
-        default: GDXD
+        default: SPY
         options: [GDXD, GDXU, TQQQ, SPY, QQQ, GLD, TLT, BIL]
   schedule:
     - cron: "35 23 * * 1-5"
+    # Before each market open, refresh structured opinions from prior close.
+    # These remain research until the independent broker executor approves.
+    - cron: "10 8 * * 1-5"
+      timezone: "America/New_York"
 
 permissions:
   # Publish ONLY sanitized public opinions and a separate virtual paper ledger.
@@ -41,7 +45,7 @@ jobs:
       AI_DESK_OPENAI_MODEL: ${{ vars.AI_DESK_OPENAI_MODEL || 'gpt-5-mini' }}
       AI_DESK_CLAUDE_MODEL: ${{ vars.AI_DESK_CLAUDE_MODEL || 'claude-haiku-4-5' }}
       AI_DESK_GROK_MODEL: ${{ vars.AI_DESK_GROK_MODEL || 'grok-4.7' }}
-      AI_DESK_FOCUS: ${{ inputs.focus_symbol || 'GDXD' }}
+      AI_DESK_FOCUS: ${{ inputs.focus_symbol || 'SPY' }}
       AI_PAPER_KILL_SWITCH: ${{ vars.AI_PAPER_KILL_SWITCH || 'false' }}
       AI_OFFICE_CHECKS_ENABLED: 'true'
       AI_OFFICE_GITHUB_TOKEN: ${{ github.token }}
@@ -80,7 +84,14 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m 'research: update sanitized seven-agent virtual paper snapshot [skip ci]'
-            git push origin HEAD:main
+            # The hourly AgentOffice publisher may advance main during inference.
+            # Rebase ONLY sanitized, credential-free research files; never force push.
+            for retry in 1 2 3; do
+              git pull --rebase origin main
+              if git push origin HEAD:main; then exit 0; fi
+            done
+            echo "AI_DESK_RESEARCH_PUBLISH_FAILED" >&2
+            exit 1
           fi
       - name: Write summary
         if: always()
