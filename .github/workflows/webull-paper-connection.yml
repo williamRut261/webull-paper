@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install official Webull OpenAPI Python SDK
-        run: python -m pip install webull-openapi-python-sdk
+        run: python -m pip install -r requirements.txt webull-openapi-python-sdk==3.0.3
       - name: Check Webull paper account access (GET-only, sandbox)
         run: python webull_paper/check_connection.py
       - name: Independently audit index-0 CASH sandbox holdings and open orders (GET only)
