@@ -53,6 +53,23 @@ def owned_positions(positions, *, equity=None, cash=None):
     return groups
 
 
+def permitted_monday_cutover_order(row, trading_day):
+    """Only the one broker-verified 63-GDXU migration SELL can coexist with sleeves.
+
+    This exception is bounded to Monday and the known exact order identity.
+    Unknown or pending cutover orders remain fail-closed.
+    """
+    return (
+        trading_day == "2026-10-26"
+        and str(row.get("client_order_id") or "") == "mc20261026S01GDXU"
+        and row.get("symbol") == "GDXU"
+        and str(row.get("side") or "").upper() == "SELL"
+        and str(row.get("order_status") or row.get("status") or row.get("orderStatus") or "").upper()
+            in {"FILLED", "FULL_FILLED", "FULLY_FILLED", "EXECUTED"}
+        and str(row.get("create_time") or row.get("created_at") or row.get("place_time_at") or "").startswith("2026-10-26")
+    )
+
+
 def validate_ownership_history(trade, account_id, positions, trading_day):
     """Require actual FILLED strategy orders for every held symbol.
 
@@ -72,7 +89,7 @@ def validate_ownership_history(trade, account_id, positions, trading_day):
         cid = str(row.get("client_order_id") or "")
         status = str(row.get("order_status") or row.get("status") or row.get("orderStatus") or "").upper()
         day = str(row.get("create_time") or row.get("created_at") or row.get("place_time_at") or "")
-        if day.startswith(trading_day) and not cid.startswith(("tr", "tc", "ag")):
+        if day.startswith(trading_day) and not (cid.startswith(("tr", "tc", "ag")) or permitted_monday_cutover_order(row, trading_day)):
             raise RuntimeError("Non-sleeve broker order today blocks shared account")
         if symbol not in positions:
             continue
