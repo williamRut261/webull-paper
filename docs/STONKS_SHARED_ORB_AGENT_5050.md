@@ -1,6 +1,6 @@
 # Webull PAPER: shared-account ORB + seven-agent desk (50/50)
 
-**Status: STAGED in PR, NOT ACTIVE, NO BROKER ORDERS PLACED.** This corrects
+**Status: MERGED to main behind explicit opt-in; NOT ACTIVATED. NO new shared-strategy broker orders placed.** This corrects
 the old separate-CASH-account plan. Both strategies use **the existing pinned
 Webull OpenAPI SANDBOX CASH account at index 0**, never Webull LIVE or Alpaca.
 
@@ -87,3 +87,10 @@ does not sell or size the seven-agent sleeve, and does not touch live accounts.
   public trading predictions or final equity estimates.
 - Current default/merged main is **not yet the shared-account architecture**.
   This change must pass regression tests, be reviewed and merged to take effect.
+
+## 2026-10-23 CDT — Authenticated sandbox cutover probe
+
+- Read-only [GitHub Actions run 40060465466](https://github.com/williamRut261/webull-paper/actions/runs/40060465466) authenticated successfully using the actual Webull SANDBOX credentials, verified index-0 CASH and the account SHA-256 pin.
+- The broker returned **63 shares of GDXU** (legacy Beethoven, outside the new two strategy sleeves), **equity $6,002.99**, **cash $1,317.68**, zero open orders, and 12 history entries. The probe placed zero orders and correctly exited nonzero (non-flat cutover BLOCKED).
+- PR #35 has been merged as commit `bfcfd9faa8c1629a19031354127c8d6f1ceb5e79` after passing [the corrected-head offline CI](https://github.com/williamRut261/webull-paper/actions/runs/40060330545); shared 50/50 opt-in has NOT been enabled or independently verified. Never treat the code merge as paper activation.
+- Before activating, reconcile and close the legacy GDXU PAPER holding via a separately authorized market-hours operation, repeat the authenticated read-only probe to confirm a flat/compatible account and zero open orders, then configure `WEBULL_SHARED_5050_ENABLED=true` and `AI_AGENTS_SANDBOX_EXECUTE_ENABLED=true` in repository Actions variables. No LIVE credentials/orders are part of the cutover.
