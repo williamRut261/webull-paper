@@ -281,6 +281,14 @@ def main():
                 raise RuntimeError("Trader quote stale immediately before sandbox order")
         preview_and_place(trade, account, payload,
                           before_submit=check_signal_stamp, session_check=morning_guard)
+        # Do not call an SDK-reported FILLED status independently verified.
+        # Require actual post-order broker position quantity to reconcile.
+        from webull_paper.automatic import reconcile_order_fill
+        reconcile_order_fill(
+            trade, account, d["symbol"], "BUY",
+            holdings2.get(d["symbol"], {}).get("qty", 0),
+            float(payload["quantity"]),
+            allowed_extra=account_position_allowlist())
         print("PAPER_TRADER_FILL_RECORDED " + json.dumps({
             "symbol": d["symbol"], "quantity": d["shares"],
             "paper_only": True, "stop_reference": d["stop_reference"],
