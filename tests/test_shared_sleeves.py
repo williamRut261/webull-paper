@@ -9,6 +9,7 @@ from unittest.mock import patch
 from trader_combo.shared_sleeves import (
     ORB_FRACTION, AGENT_FRACTION, CASH_RESERVE, GROSS_FRACTION,
     owned_positions, validate_ownership_history, shared_mode,
+    permitted_monday_cutover_order,
 )
 from trader_combo.morning import proposed_entries
 from webull_paper.signal_dry_run import NY
@@ -114,8 +115,8 @@ class SharedSleevesTests(unittest.TestCase):
         self.assertIn("group: webull-paper-order",agent)
         self.assertIn("group: webull-paper-order",orb)
         self.assertIn("group: webull-paper-order",close)
-        self.assertIn("vars.WEBULL_SHARED_5050_ENABLED == 'true'",agent)
-        self.assertIn("env.WEBULL_SHARED_5050_ENABLED != 'true'",close)
+        self.assertIn("vars.WEBULL_SHARED_5050_ENABLED != 'false'",agent)
+        self.assertIn("if: ${{ false }}",close)
         self.assertIn("python -m trader_combo.shared_close",close)
         from webull_paper.automatic import assert_paper_environment
         with patch.dict(os.environ, {"WEBULL_SHARED_5050_ENABLED":"true"}):
@@ -123,6 +124,51 @@ class SharedSleevesTests(unittest.TestCase):
                 assert_paper_environment()
         self.assertNotIn("api.webull.com",(
             root/"trader_combo/shared_close.py").read_text())
+
+    def test_monday_broker_cutover_is_only_exact_filled_gdxu_sale(self):
+        good={"client_order_id":"mc20261026S01GDXU",
+              "symbol":"GDXU","side":"SELL","order_status":"FILLED",
+              "create_time":"2026-10-26T09:36:00"}
+        self.assertTrue(permitted_monday_cutover_order(good,"2026-10-26"))
+        for change in ({"client_order_id":"mc20261026B01GDXU"},
+                       {"symbol":"SPY"},{"side":"BUY"},
+                       {"order_status":"PENDING"}):
+            with self.subTest(change=change):
+                self.assertFalse(permitted_monday_cutover_order(
+                    {**good,**change},"2026-10-26"))
+        self.assertFalse(permitted_monday_cutover_order(good,"2026-10-27"))
+        broker=SimpleNamespace(order_v3=SimpleNamespace(
+            get_order_history=lambda *a,**kw:Response([good])))
+        self.assertTrue(validate_ownership_history(broker,"shared",{},"2026-10-26"))
+        bad={**good,"order_status":"NEW"}
+        broker.order_v3.get_order_history=lambda *a,**kw:Response([bad])
+        with self.assertRaisesRegex(RuntimeError,"Non-sleeve"):
+            validate_ownership_history(broker,"shared",{},"2026-10-26")
+
+    def test_monday_workflow_order_and_staging(self):
+        root=Path(__file__).resolve().parents[1]
+        orb=(root/".github/workflows/trader-paper-automatic.yml").read_text()
+        assert orb.index("python -m webull_paper.monday_cutover") < orb.index("python -m trader_combo.morning")
+        self.assertIn("shared-cutover-v1-20261026",orb)
+        self.assertIn("WEBULL_MON_CUTOVER_APPROVED",orb)
+        from webull_paper.monday_cutover import cutover_guard,require_activation
+        m=datetime(2026,10,26,9,35,tzinfo=NY)
+        self.assertTrue(cutover_guard(m))
+        for d in [m.replace(hour=9,minute=34),
+                  m.replace(hour=10,minute=5),
+                  m.replace(day=27)]:
+            with self.assertRaises(RuntimeError):
+                cutover_guard(d)
+        with patch.dict(os.environ,{"WEBULL_SHARED_5050_ENABLED":"true",
+            "WEBULL_PAPER_EXECUTE_ENABLED":"true",
+            "WEBULL_MON_CUTOVER_APPROVED":"true",
+            "GITHUB_EVENT_NAME":"schedule",
+            "WEBULL_PAPER_ACCOUNT_INDEX":"0",
+            "WEBULL_PAPER_APP_KEY":"fake-test",
+            "WEBULL_PAPER_APP_SECRET":"fake-test",
+            "AI_PAPER_BROKER_KILL_SWITCH":"true"}):
+            with self.assertRaisesRegex(RuntimeError,"authorization"):
+                require_activation()
 
     def test_agent_dry_run_with_unrelated_orb_holding(self):
         from research.agent_sandbox_executor import execute_one
