@@ -29,6 +29,8 @@ STATE_DIR = Path("state/shared-orb-close")
 def close_day():
     if not shared_mode() or os.getenv("WEBULL_PAPER_EXECUTE_ENABLED") != "true":
         raise RuntimeError("Shared ORB close requires explicit SANDBOX 50/50 opt-in")
+    if os.getenv("AI_PAPER_BROKER_KILL_SWITCH") == "true":
+        raise RuntimeError("Shared close blocked by sandbox kill switch")
     if PAPER_HOST != "api.sandbox.webull.com":
         raise RuntimeError("Webull production host forbidden")
     if not os.getenv("WEBULL_PAPER_APP_KEY") or not os.getenv("WEBULL_PAPER_APP_SECRET"):
