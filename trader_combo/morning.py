@@ -1,9 +1,9 @@
-"""Automatically enter OG Trader Skill ORB trades: Webull SANDBOX PAPER ONLY.
+"""OG Trader Skill ORB: independently evaluated Webull SANDBOX PAPER sleeve.
 
-A separate 19% intraday sleeve is reserved by the Beethoven close runner.
-Purchases are permitted only when Beethoven owns <=80.5% of equity.
-Every scanner position is planned to exit through the 15:48 ET Beethoven run.
-Stop/target here are pre-entry risk estimates, NOT live protective orders.
+Legacy 80/19 Beethoven mode stays unchanged unless shared 50/50 is enabled.
+In 50/50 mode ORB and seven-agent desk share pinned CASH account 0,
+with separate 49.5% investable limits, distinct fills/reviews and 1% cash.
+Stop/target estimates are NOT live broker stop/target orders.
 """
 import hashlib
 import json
@@ -20,6 +20,10 @@ from trader_combo.universe import (
     MAX_TRADE_LOSS_FRACTION,
 )
 from trader_combo.scan import run_scan
+from trader_combo.shared_sleeves import (
+    AGENT_SYMBOLS, ORB_FRACTION, GROSS_FRACTION, CASH_RESERVE,
+    owned_positions, shared_mode, validate_ownership_history,
+)
 from webull_paper.signal_dry_run import NY, SANDBOX
 from webull_paper.sessions import regular_session
 from webull_paper.paper_orders import (
@@ -97,23 +101,31 @@ def scanner_history_guard(trade, account, day):
     return True
 
 
-def proposed_entries(signals, equity, cash, holdings, fresh_quotes):
-    """Pure budget and risk sizing. Prices MUST come from Webull snapshots."""
-    if equity < 100 or cash < 0 or not 0 < TRADER_WEIGHT < 0.25:
+def proposed_entries(signals, equity, cash, holdings, fresh_quotes, *, shared=False):
+    """Budget/stop sizing, independent from the other strategy's allocation."""
+    weight = ORB_FRACTION if shared else TRADER_WEIGHT
+    if equity < 100 or cash < 0 or not 0 < weight < 0.50:
         raise RuntimeError("Unusable paper sleeve equity/cash")
-    beethoven_value = sum(x["value"] for s, x in holdings.items()
-                          if s in ORIGINAL_EXECUTION_ASSETS)
     trader_value = sum(x["value"] for s, x in holdings.items() if s in CANDIDATES)
     exposure = sum(x["value"] for x in holdings.values())
-    if trader_value > 0.01 or beethoven_value > equity * (BEETHOVEN_WEIGHT + 0.005):
-        raise RuntimeError("Scanner sleeve cannot trade with legacy 99% Beethoven or held scanner positions")
-    if exposure > equity * (BEETHOVEN_WEIGHT + 0.005):
-        raise RuntimeError("Scanner already over-allocated or has unmanaged holdings")
+    if shared:
+        owned_positions(holdings,equity=equity,cash=cash)
+        if trader_value > .01:
+            raise RuntimeError("ORB overnight or existing scanner shares need reconciliation")
+        if exposure > equity * GROSS_FRACTION + .01:
+            raise RuntimeError("Shared sandbox already over-allocated")
+    else:
+        beethoven_value = sum(x["value"] for s, x in holdings.items()
+                             if s in ORIGINAL_EXECUTION_ASSETS)
+        if trader_value > 0.01 or beethoven_value > equity * (BEETHOVEN_WEIGHT + 0.005):
+            raise RuntimeError("Scanner sleeve cannot trade with legacy 99% Beethoven or held scanner positions")
+        if exposure > equity * (BEETHOVEN_WEIGHT + 0.005):
+            raise RuntimeError("Scanner already over-allocated or has unmanaged holdings")
     if not signals:
         return []
-    amount_left = min(equity * TRADER_WEIGHT, max(0, cash - equity * 0.01),
+    amount_left = min(equity * weight, max(0, cash - equity * CASH_RESERVE),
                       max(0, equity * MAX_TOTAL_EXPOSURE - exposure))
-    budget_per = equity * TRADER_WEIGHT / min(MAX_POSITIONS, len(signals))
+    budget_per = equity * weight / min(MAX_POSITIONS, len(signals))
     decisions = []
     for candidate in signals[:MAX_POSITIONS]:
         symbol = candidate["symbol"]
@@ -173,7 +185,7 @@ def main():
         return 0
     # Agents may approve only the existing 19% ORB sleeve; never submit orders
     # directly, alter Beethoven, or expand the ticker universe.
-    if os.getenv("AI_DESK_PAPER_GATE_ENABLED") == "true":
+    if not shared_mode() and os.getenv("AI_DESK_PAPER_GATE_ENABLED") == "true":
         from trader_combo.agent_gate import fetch_agent_gate
         decision = fetch_agent_gate(now.date())
         print("PAPER_AI_DESK_GATE " + json.dumps({
@@ -200,7 +212,11 @@ def main():
     scanner_history_guard(trade, account, day)
     equity, cash, holdings = checked_portfolio(trade, account, CANDIDATES)
     # Fail before any write on unexpected holdings or an unreduced Beethoven allocation.
-    if set(holdings) - (ORIGINAL_EXECUTION_ASSETS | CANDIDATES):
+    shared=shared_mode()
+    if shared:
+        owned_positions(holdings,equity=equity,cash=cash)
+        validate_ownership_history(trade, account, holdings, day)
+    elif set(holdings) - (ORIGINAL_EXECUTION_ASSETS | CANDIDATES):
         raise RuntimeError("Unknown holdings")
     fresh = {}
     trade_times = {}
@@ -215,13 +231,17 @@ def main():
                 raise RuntimeError("Trader intraday entry requires <=120s Webull quote freshness")
             fresh[symbol] = price
             trade_times[symbol] = fetched.trade_times[symbol]
-    decisions = proposed_entries(signals, equity, cash, holdings, fresh)
+    decisions = proposed_entries(signals, equity, cash, holdings, fresh, shared=shared)
     print("PAPER_TRADER_PLAN " + json.dumps({
         "date": day, "mode": "sandbox_only", "source": "OG Trader Skill ORB",
-        "beethoven_allocation": BEETHOVEN_WEIGHT, "scanner_allocation": TRADER_WEIGHT,
+        "beethoven_allocation": 0 if shared else BEETHOVEN_WEIGHT,
+        "scanner_allocation": ORB_FRACTION if shared else TRADER_WEIGHT,
+        "agent_allocation": ORB_FRACTION if shared else 0,
+        "separate_strategy_reports": shared,
         "candidates_checked": len(CANDIDATES), "signals": len(signals),
         "orders_planned": decisions, "stop_orders_submitted": False,
-        "exit_plan": "Same-day 15:48 ET close by Beethoven job (best effort)"
+        "exit_plan": ("Same-day 15:48 ET shared ORB-only close (best effort)"
+                      if shared else "Same-day 15:48 ET close by Beethoven job (best effort)")
     }, sort_keys=True), flush=True)
     if not decisions:
         return 0
@@ -233,11 +253,15 @@ def main():
         equity2, cash2, holdings2 = checked_portfolio(trade, account, CANDIDATES)
         exposure = sum(v["value"] for v in holdings2.values())
         reserved = d["gross_reserved"]
+        if shared:
+            owned_positions(holdings2,equity=equity2,cash=cash2)
+            validate_ownership_history(trade,account,holdings2,day)
         trader_exposure = sum(v["value"] for s, v in holdings2.items()
                               if s in CANDIDATES)
+        sleeve_limit = ORB_FRACTION if shared else TRADER_WEIGHT
         if (exposure + reserved > equity2 * MAX_TOTAL_EXPOSURE + 1e-6
-                or trader_exposure + reserved > equity2 * TRADER_WEIGHT + 1e-6
-                or cash2 - reserved < equity2 * .01):
+                or trader_exposure + reserved > equity2 * sleeve_limit + 1e-6
+                or cash2 - reserved < equity2 * CASH_RESERVE):
             raise RuntimeError("Rechecked scanner order would exceed sleeve or cash")
         payload = order_payload(
             d["symbol"], "BUY", d["shares"] * d["price"], d["price"], day, i,
