@@ -31,7 +31,8 @@ jobs:
       WEBULL_PAPER_EXECUTE_ENABLED: "true"
       WEBULL_TRADER_PAPER_ENABLED: "true"
       WEBULL_PAPER_ACCOUNT_INDEX: "0"
-      WEBULL_SHARED_5050_ENABLED: ${{ vars.WEBULL_SHARED_5050_ENABLED || 'false' }}
+      WEBULL_SHARED_5050_ENABLED: ${{ vars.WEBULL_SHARED_5050_ENABLED || 'true' }}
+      AI_PAPER_BROKER_KILL_SWITCH: ${{ vars.AI_PAPER_BROKER_KILL_SWITCH || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,13 +50,13 @@ jobs:
           path: state/webull-paper
           key: webull-public-paper-v1-${{ steps.date.outputs.day }}
       - name: Execute WEBULL SANDBOX paper orders only
-        if: env.WEBULL_SHARED_5050_ENABLED != 'true'
+        if: ${{ false }} # Retired Beethoven account rebalancer; must never run beside shared sleeves
         run: |
           mkdir -p logs
           set -o pipefail
           python -m webull_paper.automatic 2>&1 | tee logs/webull-paper.log
       - name: Save daily execution claim, including failures
-        if: always() && env.WEBULL_SHARED_5050_ENABLED != 'true' && steps.state.outputs.cache-hit != 'true' && hashFiles('state/webull-paper/*.json') != ''
+        if: ${{ false }} && steps.state.outputs.cache-hit != 'true' && hashFiles('state/webull-paper/*.json') != ''
         uses: actions/cache/save@v4
         with:
           path: state/webull-paper
