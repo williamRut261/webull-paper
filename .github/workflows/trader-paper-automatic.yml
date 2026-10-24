@@ -1,4 +1,4 @@
-name: Trader ORB + Beethoven PAPER (SANDBOX ONLY)
+name: Shared Webull 50/50 ORB entry + Monday legacy cutover (SANDBOX ONLY)
 on:
   workflow_dispatch:
   schedule:
@@ -27,7 +27,8 @@ jobs:
       WEBULL_PAPER_EXECUTE_ENABLED: "true"
       WEBULL_TRADER_PAPER_ENABLED: "true"
       AI_DESK_PAPER_GATE_ENABLED: "true"
-      WEBULL_SHARED_5050_ENABLED: ${{ vars.WEBULL_SHARED_5050_ENABLED || 'false' }}
+      WEBULL_SHARED_5050_ENABLED: ${{ vars.WEBULL_SHARED_5050_ENABLED || 'true' }}
+      WEBULL_MON_CUTOVER_APPROVED: "true"
       AI_PAPER_BROKER_KILL_SWITCH: ${{ vars.AI_PAPER_BROKER_KILL_SWITCH || 'false' }}
       WEBULL_PAPER_ACCOUNT_INDEX: "0"
     steps:
@@ -46,6 +47,25 @@ jobs:
         with:
           path: state/trader-paper
           key: webull-trader-paper-v1-${{ steps.date.outputs.day }}
+      - name: Restore one-time Monday legacy-cutover claim
+        if: steps.date.outputs.day == '20261026' && env.WEBULL_SHARED_5050_ENABLED == 'true'
+        id: cutover
+        uses: actions/cache/restore@v4
+        with:
+          path: state/shared-cutover
+          key: shared-cutover-v1-20261026
+      - name: Broker-verified Monday legacy 63-GDXU sale before ORB entry
+        if: steps.date.outputs.day == '20261026' && env.WEBULL_SHARED_5050_ENABLED == 'true'
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          python -m webull_paper.monday_cutover 2>&1 | tee logs/monday-cutover.log
+      - name: Save Monday cutover claim, including any uncertain order receipt
+        if: always() && steps.date.outputs.day == '20261026' && steps.cutover.outputs.cache-hit != 'true' && hashFiles('state/shared-cutover/*.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/shared-cutover
+          key: shared-cutover-v1-20261026
       - name: Buy only fully-verified OG scanner sandbox breakouts
         run: |
           mkdir -p logs
