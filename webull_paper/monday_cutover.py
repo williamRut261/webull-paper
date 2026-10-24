@@ -44,6 +44,7 @@ def require_activation():
             or os.getenv("WEBULL_SHARED_5050_ENABLED") != "true"
             or os.getenv("WEBULL_PAPER_EXECUTE_ENABLED") != "true"
             or os.getenv("WEBULL_MON_CUTOVER_APPROVED") != "true"
+            or os.getenv("AI_PAPER_BROKER_KILL_SWITCH") == "true"
             or os.getenv("GITHUB_EVENT_NAME") != "schedule"
             or os.getenv("WEBULL_PAPER_ACCOUNT_INDEX") != "0"):
         raise RuntimeError("CUTOVER_BLOCKED: no scheduled sandbox-only authorization")
