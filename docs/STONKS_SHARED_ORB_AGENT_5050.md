@@ -94,3 +94,36 @@ does not sell or size the seven-agent sleeve, and does not touch live accounts.
 - The broker returned **63 shares of GDXU** (legacy Beethoven, outside the new two strategy sleeves), **equity $6,002.99**, **cash $1,317.68**, zero open orders, and 12 history entries. The probe placed zero orders and correctly exited nonzero (non-flat cutover BLOCKED).
 - PR #35 has been merged as commit `bfcfd9faa8c1629a19031354127c8d6f1ceb5e79` after passing [the corrected-head offline CI](https://github.com/williamRut261/webull-paper/actions/runs/40060330545); shared 50/50 opt-in has NOT been enabled or independently verified. Never treat the code merge as paper activation.
 - Before activating, reconcile and close the legacy GDXU PAPER holding via a separately authorized market-hours operation, repeat the authenticated read-only probe to confirm a flat/compatible account and zero open orders, then configure `WEBULL_SHARED_5050_ENABLED=true` and `AI_AGENTS_SANDBOX_EXECUTE_ENABLED=true` in repository Actions variables. No LIVE credentials/orders are part of the cutover.
+
+## Monday 2026-10-26 (Eastern) — owner-authorized, fail-closed automatic cutover
+
+**Implementation pending exact-head CI and merge.** The owner asked to fix the blocked
+activation and to allow actual Webull SANDBOX PAPER trading on Monday. The
+scheduled ORB runner (09:05 ET staging, first order at 10:25 ET) now reserves
+the common broker-order concurrency lock and performs the one-time
+`python -m webull_paper.monday_cutover` at 09:35-10:05 ET. On the pinned
+index-0 CASH SANDBOX account only, require the broker's filled
+`bt20261023B02GDXU` record and **exactly 63 GDXU shares with no other
+positions or open orders**. A verified fresh quote permits a single 63-share
+MARKET SELL with client ID `mc20261026S01GDXU`. Broker order detail,
+then zero remaining GDXU holdings, must reconcile. An immutable daily claim and
+broker-order-history duplicate check forbid repeat submission after uncertain
+responses. Any other account, quantity, symbol, or order history aborts.
+
+On a verified flat cutover, independently run the original ORB scanner
+at 10:25 ET (09:25 Houston). The independent seven-agent executor at
+11:22 ET (10:22 Houston) checks prior-session genuine structured consensus
+and separately approves any SPY/QQQ entry or exit. Existing AgentOffice
+conversations enter the desk only as **untrusted research context**; they
+cannot issue or duplicate brokerage orders. At 15:48 ET (14:48 Houston),
+the close workflow closes ORB positions only and preserves agents.
+
+The repository's scheduled workflows have an explicit owner-activated
+50/50 default, with repository variables `WEBULL_SHARED_5050_ENABLED=false`
+or `AI_AGENTS_SANDBOX_EXECUTE_ENABLED=false` available to stop a sleeve.
+`AI_PAPER_BROKER_KILL_SWITCH=true` blocks both strategies and the cutover.
+The older Beethoven rebalance is retired by a permanent false workflow guard.
+**No guaranteed Monday BUY:** a verified paper transition SELL can occur;
+ORB and agents place additional orders *only* on fresh approved signals. A
+skipped trade or veto does not establish failed implementation.
+No LIVE or Alpaca account is accessed by the new workflow.
