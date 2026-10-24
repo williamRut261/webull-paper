@@ -1,3 +1,5 @@
+> **Architecture update — staged in [PR #35](https://github.com/williamRut261/webull-paper/pull/35), NOT deployed:** The owner requires the seven-agent trading desk and ORB to execute qualifying Webull SANDBOX PAPER orders in the **same pinned CASH account 0**, with equal 50% strategy sleeves (49.5% investment cap each and 1% shared cash), **separate strategy decisions and reviews**. The earlier dedicated agent account and AI-veto-of-ORB designs below describe legacy behavior only. Beethoven's 80/19 paper execution must not coexist on this account after a reviewed 50/50 cutover. See [current shared-account implementation and activation blockers](../docs/STONKS_SHARED_ORB_AGENT_5050.md) (or `../docs/STONKS_SHARED_ORB_AGENT_5050.md` from research files). No flag is enabled and no orders are placed by the draft PR.
+
 # Automatic seven-agent approval of Webull SANDBOX PAPER ORB orders
 
 **Scope:** Existing first Webull OpenAPI **SANDBOX** CASH account, not native

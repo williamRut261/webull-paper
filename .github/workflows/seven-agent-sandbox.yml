@@ -1,4 +1,4 @@
-name: Seven-Agent Webull Sandbox Trade (SEPARATE CASH ACCOUNT)
+name: Seven-Agent Webull Sandbox Trade (SHARED ORB CASH ACCOUNT)
 on:
   workflow_dispatch:
   schedule:
@@ -16,16 +16,16 @@ concurrency:
 
 jobs:
   seven-agent-sandbox:
-    # Manual workflow dispatch is audit-only and cannot place an order.
-    # Default DISABLED until a distinct CASH sandbox account is pinned.
-    if: github.event_name == 'schedule' && vars.AI_AGENTS_SANDBOX_EXECUTE_ENABLED == 'true'
+    # Manual dispatch never places an order. Shared 50/50 cutover must
+    # be explicitly enabled and reviewed before this executor can trade.
+    if: github.event_name == 'schedule' && vars.AI_AGENTS_SANDBOX_EXECUTE_ENABLED == 'true' && vars.WEBULL_SHARED_5050_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 14
     env:
       PYTHONPATH: .
       AI_AGENTS_SANDBOX_EXECUTE_ENABLED: ${{ vars.AI_AGENTS_SANDBOX_EXECUTE_ENABLED || 'false' }}
-      AI_AGENTS_ACCOUNT_INDEX: ${{ vars.AI_AGENTS_ACCOUNT_INDEX || '' }}
-      AI_AGENTS_ACCOUNT_SHA256: ${{ secrets.AI_AGENTS_ACCOUNT_SHA256 }}
+      WEBULL_SHARED_5050_ENABLED: ${{ vars.WEBULL_SHARED_5050_ENABLED || 'false' }}
+      WEBULL_PAPER_ACCOUNT_INDEX: "0"
       WEBULL_PAPER_ACCOUNT_SHA256: ${{ secrets.WEBULL_PAPER_ACCOUNT_SHA256 }}
       WEBULL_PAPER_APP_KEY: ${{ secrets.WEBULL_PAPER_APP_KEY }}
       WEBULL_PAPER_APP_SECRET: ${{ secrets.WEBULL_PAPER_APP_SECRET }}

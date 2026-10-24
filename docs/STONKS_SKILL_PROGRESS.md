@@ -175,3 +175,34 @@ requires an explicit authenticated redeployment of reviewed main.
 
 Verification evidence should be appended as a separate GitHub PR
 comment after the latest branch and merged-main CI complete.
+
+
+## 2026-10-23 CDT — Owner correction: ORB and seven-agent desk share one PAPER CASH account
+
+The owner explicitly corrected the earlier separate-account assumption. **Target
+architecture is one pinned Webull SANDBOX CASH index-0 account with equal 50% economic
+allocations to ORB and the seven-agent desk, independently reviewed.** Each sleeve
+may invest at most 49.5% of total equity with a 1% aggregate cash reserve.
+
+Implementation staged on `feature/webull-shared-orb-agent-5050-20261023`:
+- new `trader_combo/shared_sleeves.py` enforces separate ticker/order-ID
+  ownership, per-sleeve exposure and filled-order provenance;
+- existing `research/agent_sandbox_executor.py` now routes to the **same pinned
+  CASH index 0** as ORB and can consider ORB holdings without attempting to sell
+  them; no separate agent-account secret/index accepted;
+- `trader_combo/morning.py` runs its own ORB scanner and rules in 50/50 mode,
+  independent of the seven-agent veto; the legacy 80/19 behavior is retained
+  while shared mode remains disabled;
+- `trader_combo/shared_close.py` and conditional EOD workflow close **ORB-only**
+  holdings, explicitly preserving agents; legacy Beethoven order execution
+  refuses to run when shared mode is active;
+- `dashboard/app.py` account-discovery wording reflects index-0 shared access;
+- `tests/test_shared_sleeves.py` and updated sandbox tests cover split,
+  routing, legacy-holdings refusal, same-day order separation, independent
+  fills and no automatic trading on a draft branch.
+
+Activation remains **BLOCKED** pending PR CI/review and read-only SANDBOX
+verification of current holdings. Previous latest workflow reported GDXU
+positions; never sell these automatically to force the cutover. No orders
+or account permissions were modified in this implementation session.
+See [shared sleeve cutover guide](STONKS_SHARED_ORB_AGENT_5050.md).

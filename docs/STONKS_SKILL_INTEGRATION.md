@@ -166,3 +166,26 @@ additional authenticated external checks remain explicitly **unverified**.
   or unverified parameter optimization have been introduced.
 - No new trade activation, brokerage orders, cloud deployments or
   live-money operations are part of these repository changes.
+
+
+## 2026-10-23 CDT — Corrected Webull PAPER execution contract
+
+Owner's newer instruction supersedes the earlier dedicated-account
+recommendation for **Webull SANDBOX PAPER only**: one pinned CASH account,
+two independent 50% economic sleeves (ORB and seven-agent desk), max 49.5%
+invested each and 1% aggregate cash. Research-only AgentOffice conversations
+never generate order authority. Structured seven-agent consensus remains a
+strict prerequisite for **actual SANDBOX** agent orders, independent of ORB
+scanner decisions. Shared account routing never implies shared strategy
+ownership, P&L, execution IDs or risk approval. The old 80/19 Beethoven
+paper execution cannot run concurrently with this 50/50 plan.
+
+GitHub action `webull-paper-order` serializes all three entries/exits; `tr`
+and `tc` tag ORB, `ag` tags agent desk. Provenance, expected cash, open
+orders, risk caps and broker fill/position reconciliation must pass at each
+broker write. Individual-run artifacts remain separated; P&L must come from
+broker read-only records after verified fills, not from daily research JSON.
+The configuration defaults to the old inactive shared flag and requires
+an intentionally reviewed flat/compatible sandbox cutover, followed by an
+explicit opt-in; **no production or live money trading is enabled**.
+See [50/50 architecture](STONKS_SHARED_ORB_AGENT_5050.md).

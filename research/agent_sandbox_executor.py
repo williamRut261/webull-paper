@@ -1,8 +1,8 @@
-"""Seven-agent consensus -> ONE real Webull SANDBOX order (never LIVE).
+"""Seven-agent consensus -> ONE real Webull SANDBOX PAPER order (never LIVE).
 
-Separate broker account from Beethoven/ORB PAPER. Disabled until an owner
-pins a distinct CASH sandbox account and explicitly enables this workflow.
-Research dialogue text is deliberately NEVER interpreted as order authority.
+Shared pinned CASH account with ORB, independent 49.5%-of-equity agent sleeve.
+Separate order IDs and strategy reports. No research-only chat order authority.
+Exclusive 50/50 mode and opt-in required; legacy Beethoven holdings block trade.
 """
 import argparse
 from datetime import datetime
@@ -18,6 +18,10 @@ from urllib.request import Request, urlopen
 
 from research.ai_desk import ROLES
 from trader_combo.agent_gate import evaluate_agent_gate
+from trader_combo.shared_sleeves import (
+    AGENT_FRACTION, AGENT_SYMBOLS, ORB_SYMBOLS, CASH_RESERVE,
+    owned_positions, shared_mode, validate_ownership_history,
+)
 from webull_paper.signal_dry_run import NY
 from webull_paper.sessions import regular_session
 from webull_paper.automatic import (
@@ -29,8 +33,8 @@ from webull_paper.readiness import accounts_from
 
 STATUS_URL = ("https://raw.githubusercontent.com/williamRut261/webull-paper/"
               "main/research/ai_desk_status.json")
-ALLOWED = frozenset(("SPY", "QQQ"))
-MAX_POSITION_FRACTION = 0.05
+ALLOWED = AGENT_SYMBOLS
+MAX_POSITION_FRACTION = AGENT_FRACTION
 MIN_NOTIONAL = 5.0
 CID_PREFIX = "ag"
 STATE_DIR = Path("state/agent-sandbox")
@@ -89,28 +93,23 @@ def approved_ticket(report, trade_day):
             "reason":"SEVEN_AGENT_RISK_APPROVED"}
 
 
-def check_dedicated_account(trade, account_index, fingerprint):
-    if account_index not in ("1","2","3","4"):
-        raise RuntimeError("Requires a dedicated non-Beethoven sandbox index 1–4")
-    if not re.fullmatch(r"[0-9a-f]{64}",fingerprint):
-        raise RuntimeError("Dedicated sandbox account fingerprint missing")
-    rows=accounts_from(verified(trade.account_v2.get_account_list(),
-                                 "sandbox account discovery"))
-    idx=int(account_index)
-    if idx>=len(rows):
-        raise RuntimeError("Dedicated sandbox account index unavailable")
-    row=rows[idx]
-    if row.get("account_type")!="CASH":
-        raise RuntimeError("Dedicated agent account must be CASH")
-    account_id=str(row.get("account_id") or "")
+def check_shared_account(trade, account_index, fingerprint):
+    """Pin exactly the same existing CASH account index 0 used by ORB."""
+    if account_index != "0":
+        raise RuntimeError("Shared ORB/agent PAPER account must use index 0")
+    if not re.fullmatch(r"[0-9a-f]{64}", fingerprint or ""):
+        raise RuntimeError("Shared sandbox CASH account fingerprint missing")
+    if not hmac.compare_digest(os.getenv("WEBULL_PAPER_ACCOUNT_SHA256", ""), fingerprint):
+        raise RuntimeError("Shared account fingerprint must match ORB pin")
+    rows = accounts_from(verified(trade.account_v2.get_account_list(),
+                                  "sandbox shared account discovery"))
+    if not rows or rows[0].get("account_type") != "CASH":
+        raise RuntimeError("Shared SANDBOX index 0 is not CASH")
+    account_id = str(rows[0].get("account_id") or "")
     if not account_id or not hmac.compare_digest(
-            hashlib.sha256(account_id.encode()).hexdigest(),fingerprint):
-        raise RuntimeError("Dedicated account fingerprint mismatch")
-    other=os.getenv("WEBULL_PAPER_ACCOUNT_SHA256","")
-    if other and hmac.compare_digest(other,fingerprint):
-        raise RuntimeError("Agents cannot share Beethoven / ORB sandbox account")
+            hashlib.sha256(account_id.encode()).hexdigest(), fingerprint):
+        raise RuntimeError("Shared CASH account fingerprint mismatch")
     return account_id
-
 
 def verify_order_book(trade, account_id, today):
     open_rows=order_items(verified(
@@ -123,18 +122,16 @@ def verify_order_book(trade, account_id, today):
         "paper order history"),"paper order history")
     if len(history)>=100:
         raise RuntimeError("Order history may be truncated")
-    # Refuse ANY order on this dedicated account today, even one created
-    # outside our workflow, to prevent duplicates/cross-bot interference.
+    # Permit existing ORB orders in the shared account. Refuse same-day
+    # non-sleeve orders and any agent retry; do not interpret ORB fills as ours.
     for row in history:
         raw=(str(row.get("create_time") or row.get("created_at") or
                  row.get("place_time_at") or ""))
         cid=str(row.get("client_order_id") or "")
-        if not cid.startswith(CID_PREFIX):
-            raise RuntimeError("This sandbox account was used by another trader")
         if cid.startswith(CID_PREFIX+today.replace("-","")):
             raise RuntimeError("Agent order already submitted for trading date")
-        if raw.startswith(today):
-            raise RuntimeError("Dedicated paper account already traded today")
+        if raw.startswith(today) and not cid.startswith(("ag", "tr", "tc")):
+            raise RuntimeError("Unmanaged order today blocks shared PAPER execution")
 
 
 def claim_day(day):
@@ -154,8 +151,10 @@ def build_payload(symbol, price, equity, cash, day):
     if not all(type(v) in (int,float) and math.isfinite(v) and v>=0
                for v in (equity,cash)):
         raise RuntimeError("Invalid account equity or cash")
-    # Limit to 5% of this dedicated sandbox equity. Leave 95% uninvested.
-    notional=min(equity*MAX_POSITION_FRACTION,cash*0.98)
+    # 50/50 economic sleeves, each capped at 49.5% of total equity.
+    # Always reserve >=1% aggregate equity as CASH.
+    notional=min(equity*MAX_POSITION_FRACTION,
+                 max(0.0, cash-equity*CASH_RESERVE)*0.98)
     qty=Decimal(str(notional))/Decimal(str(price))
     qty=qty.quantize(Decimal("0.00001"),rounding=ROUND_DOWN)
     if qty>=1:
@@ -195,14 +194,17 @@ def execute_one(trade,data,account_id,ticket, now,*, dry_run=True,
     today=now.astimezone(NY).date().isoformat()
     verify_order_book(trade,account_id,today)
     equity,cash,positions=checked_portfolio(trade,account_id,
-                                            allowed_extra=ALLOWED)
+                                            allowed_extra=ALLOWED|ORB_SYMBOLS)
+    groups=owned_positions(positions,equity=equity,cash=cash)
+    validate_ownership_history(trade, account_id, positions, today)
+    agent_positions=groups["agents"]
     symbol=ticket["symbol"]
     side=ticket.get("side","BUY")
     if side not in ("BUY","SELL") or symbol not in ALLOWED:
         raise RuntimeError("Invalid agent order authority")
-    if positions and (side=="BUY" or set(positions)!={symbol}):
-        return {"status":"NO_TRADE_EXISTING_POSITION","orders":0}
-    if side=="SELL" and symbol not in positions:
+    if agent_positions and (side=="BUY" or set(agent_positions)!={symbol}):
+        return {"status":"NO_TRADE_EXISTING_AGENT_POSITION","orders":0}
+    if side=="SELL" and symbol not in agent_positions:
         return {"status":"NO_POSITION_TO_SELL","orders":0}
     observed_clock=clock or (lambda:datetime.now(NY))
     prices,_=collect_snapshots(data,[symbol],now,True,clock=observed_clock)
@@ -212,7 +214,7 @@ def execute_one(trade,data,account_id,ticket, now,*, dry_run=True,
     if side=="BUY":
         order=build_payload(symbol,prices[symbol],equity,cash,today)
     else:
-        qty=positions[symbol]["qty"]
+        qty=agent_positions[symbol]["qty"]
         if qty*prices[symbol]<MIN_NOTIONAL:
             return {"status":"SELL_BELOW_MINIMUM","orders":0}
         order=build_sell_payload(symbol,qty,today)
@@ -228,20 +230,27 @@ def execute_one(trade,data,account_id,ticket, now,*, dry_run=True,
         prices.validate({symbol},current)
         verify_order_book(trade,account_id,today)
         updated_equity,updated_cash,updated_positions=checked_portfolio(
-            trade,account_id,allowed_extra=ALLOWED)
+            trade,account_id,allowed_extra=ALLOWED|ORB_SYMBOLS)
+        updated_groups=owned_positions(
+            updated_positions,equity=updated_equity,cash=updated_cash)
+        validate_ownership_history(trade,account_id,updated_positions,today)
+        if set(updated_positions)!=set(positions) or any(
+                abs(updated_positions[x]["qty"]-positions[x]["qty"])>0.000001
+                for x in positions):
+            raise RuntimeError("Shared account positions changed since agent plan")
         if side=="BUY":
-            if updated_positions or updated_cash < float(order["quantity"])*prices[symbol]*1.02:
-                raise RuntimeError("Cash/position changed since order plan")
-        elif set(updated_positions)!={symbol} or abs(
-                updated_positions[symbol]["qty"]-positions[symbol]["qty"])>0.000001:
-            raise RuntimeError("Position changed since order plan")
+            cost=float(order["quantity"])*prices[symbol]*1.02
+            if updated_groups["agents"] or updated_cash - cost < updated_equity*CASH_RESERVE:
+                raise RuntimeError("Agent BUY would breach sleeve or cash reserve")
+        elif set(updated_groups["agents"])!={symbol}:
+            raise RuntimeError("Agent SELL cannot touch ORB position")
         if updated_equity<=0:
             raise RuntimeError("Invalid paper equity")
     submit(trade,account_id,order,before_submit=before_submit,
            session_check=session_guard)
     reconcile_order_fill(trade,account_id,symbol,side,
-                         positions.get(symbol,{}).get("qty",0),
-                         float(order["quantity"]),allowed_extra=ALLOWED)
+                         agent_positions.get(symbol,{}).get("qty",0),
+                         float(order["quantity"]),allowed_extra=ALLOWED|ORB_SYMBOLS)
     return {"status":"BROKER_SANDBOX_FILL_RECONCILED","orders":1,
             "symbol":symbol,"side":side,"quantity":order["quantity"]}
 
@@ -256,6 +265,8 @@ def main(argv=None):
         raise RuntimeError("Sandbox execution disabled unless owner enables scheduled mode")
     if PAPER_HOST!="api.sandbox.webull.com":
         raise RuntimeError("Production Webull host forbidden")
+    if not shared_mode():
+        raise RuntimeError("Shared 50/50 PAPER mode disabled; never use isolated account")
     now=datetime.now(NY)
     session_guard(now)
     report=load_report()
@@ -268,13 +279,13 @@ def main(argv=None):
     from webull.trade.trade_client import TradeClient
     key,secret=os.getenv("WEBULL_PAPER_APP_KEY"),os.getenv("WEBULL_PAPER_APP_SECRET")
     if not key or not secret:
-        raise RuntimeError("Dedicated sandbox credentials absent")
+        raise RuntimeError("Shared sandbox credentials absent")
     api=ApiClient(key,secret,"us")
     api.add_endpoint("us",PAPER_HOST)  # hard-coded sandbox, NEVER production
     trade,data=TradeClient(api),DataClient(api)
-    account_id=check_dedicated_account(
-        trade,os.getenv("AI_AGENTS_ACCOUNT_INDEX",""),
-        os.getenv("AI_AGENTS_ACCOUNT_SHA256",""))
+    account_id=check_shared_account(
+        trade,os.getenv("WEBULL_PAPER_ACCOUNT_INDEX",""),
+        os.getenv("WEBULL_PAPER_ACCOUNT_SHA256",""))
     outcome=execute_one(trade,data,account_id,ticket,now,dry_run=not args.execute)
     print("AI_AGENT_SANDBOX "+json.dumps(outcome,sort_keys=True),flush=True)
     return 0

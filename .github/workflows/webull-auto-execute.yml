@@ -31,6 +31,7 @@ jobs:
       WEBULL_PAPER_EXECUTE_ENABLED: "true"
       WEBULL_TRADER_PAPER_ENABLED: "true"
       WEBULL_PAPER_ACCOUNT_INDEX: "0"
+      WEBULL_SHARED_5050_ENABLED: ${{ vars.WEBULL_SHARED_5050_ENABLED || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,23 +49,36 @@ jobs:
           path: state/webull-paper
           key: webull-public-paper-v1-${{ steps.date.outputs.day }}
       - name: Execute WEBULL SANDBOX paper orders only
+        if: env.WEBULL_SHARED_5050_ENABLED != 'true'
         run: |
           mkdir -p logs
           set -o pipefail
           python -m webull_paper.automatic 2>&1 | tee logs/webull-paper.log
       - name: Save daily execution claim, including failures
-        if: always() && steps.state.outputs.cache-hit != 'true' && hashFiles('state/webull-paper/*.json') != ''
+        if: always() && env.WEBULL_SHARED_5050_ENABLED != 'true' && steps.state.outputs.cache-hit != 'true' && hashFiles('state/webull-paper/*.json') != ''
         uses: actions/cache/save@v4
         with:
           path: state/webull-paper
           key: webull-public-paper-v1-${{ steps.date.outputs.day }}
       - name: Summarize paper signals and risks (ADVISORY ONLY - NO ORDERS)
-        if: always()
+        if: always() && env.WEBULL_SHARED_5050_ENABLED != 'true'
         run: |
           python -m research.beethoven_advisory \
             --log logs/webull-paper.log \
             --output logs/beethoven-research.json \
             || echo "Research report unavailable; original sandbox trading unaffected"
+      - name: Close ORB-owned positions only and preserve agent holdings
+        if: env.WEBULL_SHARED_5050_ENABLED == 'true'
+        run: |
+          mkdir -p logs
+          set -o pipefail
+          python -m trader_combo.shared_close 2>&1 | tee logs/shared-orb-close.log
+      - name: Save shared ORB close claim on any attempted close
+        if: always() && env.WEBULL_SHARED_5050_ENABLED == 'true' && hashFiles('state/shared-orb-close/*.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state/shared-orb-close
+          key: shared-orb-close-v1-${{ steps.date.outputs.day }}
       - name: Preserve paper order audit log
         if: always()
         uses: actions/upload-artifact@v4
