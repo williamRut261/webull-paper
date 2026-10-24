@@ -242,8 +242,8 @@ class AgentsSandboxTests(unittest.TestCase):
         self.assertNotIn("alpaca",source.lower())
         workflow=(Path(__file__).resolve().parents[1]/
                   ".github/workflows/seven-agent-sandbox.yml").read_text()
-        self.assertIn("vars.AI_AGENTS_SANDBOX_EXECUTE_ENABLED == 'true'",workflow)
-        self.assertIn("vars.WEBULL_SHARED_5050_ENABLED == 'true'",workflow)
+        self.assertIn("vars.AI_AGENTS_SANDBOX_EXECUTE_ENABLED != 'false'",workflow)
+        self.assertIn("vars.WEBULL_SHARED_5050_ENABLED != 'false'",workflow)
         self.assertIn('WEBULL_PAPER_ACCOUNT_INDEX: "0"',workflow)
         self.assertIn("contents: read",workflow)
         self.assertIn("group: webull-paper-order",workflow)
