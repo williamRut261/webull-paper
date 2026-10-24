@@ -266,6 +266,9 @@ def main(argv=None):
             os.getenv("AI_AGENTS_SANDBOX_EXECUTE_ENABLED")!="true" or
             os.getenv("GITHUB_EVENT_NAME")!="schedule"):
         raise RuntimeError("Sandbox execution disabled unless owner enables scheduled mode")
+    if os.getenv("AI_PAPER_BROKER_KILL_SWITCH") == "true":
+        print("AI_AGENT_PAPER_KILL_SWITCH orders=0", flush=True)
+        return 0
     if PAPER_HOST!="api.sandbox.webull.com":
         raise RuntimeError("Production Webull host forbidden")
     if not shared_mode():
