@@ -65,7 +65,9 @@ def close_day():
         raise RuntimeError("Outstanding sandbox order blocks shared ORB close")
     equity, cash, positions = checked_portfolio(
         trade, account, allowed_extra=AGENT_SYMBOLS | ORB_SYMBOLS)
-    groups = owned_positions(positions, equity=equity, cash=cash)
+    # Exits reduce risk even if a post-entry price rally pushes holdings
+    # slightly beyond original sleeve target. Reject unknown tickers, not gains.
+    groups = owned_positions(positions)
     validate_ownership_history(trade, account, positions, today)
     exits = groups["orb"]
     print("SHARED_ORB_CLOSE_PLAN " + json.dumps({
@@ -108,7 +110,7 @@ def close_day():
                 raise RuntimeError("New open orders appeared before ORB close")
             eq, ca, pos = checked_portfolio(
                 trade, account, allowed_extra=AGENT_SYMBOLS | ORB_SYMBOLS)
-            current = owned_positions(pos, equity=eq, cash=ca)
+            current = owned_positions(pos)
             validate_ownership_history(trade, account, pos, today)
             if set(current["agents"]) != set(groups["agents"]) or any(
                     abs(current["agents"][s]["qty"] - groups["agents"][s]["qty"]) > 0.000001
