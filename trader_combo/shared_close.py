@@ -21,6 +21,7 @@ from webull_paper.automatic import (
 )
 from webull_paper.paper_orders import collect_snapshots, verified, session_guard
 from webull_paper.signal_dry_run import NY
+from webull_paper.sessions import regular_session
 
 STATE_DIR = Path("state/shared-orb-close")
 
@@ -32,6 +33,16 @@ def close_day():
         raise RuntimeError("Webull production host forbidden")
     if not os.getenv("WEBULL_PAPER_APP_KEY") or not os.getenv("WEBULL_PAPER_APP_SECRET"):
         raise RuntimeError("Missing sandbox credentials")
+    now = datetime.now(NY)
+    # The existing GitHub workflow stages before 15:48 ET; do not
+    # execute early or try to recover after the close window.
+    target = now.replace(hour=15, minute=48, second=0, microsecond=0)
+    if not regular_session(now) or now.hour < 14:
+        raise RuntimeError("Shared ORB close outside supported staging window")
+    if now < target:
+        seconds = (target - now).total_seconds()
+        print("SHARED_ORB_WAIT_FOR_CLOSE seconds=" + str(int(seconds)), flush=True)
+        time.sleep(seconds)
     now = datetime.now(NY)
     session_guard(now)
     from webull.core.client import ApiClient
