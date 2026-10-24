@@ -39,6 +39,10 @@ def selected_account_matches_pin(account_id, accounts, index):
 
 
 def assert_paper_environment():
+    # Exclusive cutover: legacy 80/19 Beethoven cannot rebalance a shared
+    # 50/50 ORB/agent account or inadvertently close desk-owned holdings.
+    if os.getenv("WEBULL_SHARED_5050_ENABLED") == "true":
+        raise RuntimeError("Legacy Beethoven executor disabled in shared 50/50 mode")
     if SANDBOX != PAPER_HOST:
         raise RuntimeError("Webull production endpoint is FORBIDDEN")
     if os.getenv("WEBULL_PAPER_EXECUTE_ENABLED") != "true":
