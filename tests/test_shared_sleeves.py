@@ -76,6 +76,20 @@ class SharedSleevesTests(unittest.TestCase):
             validate_ownership_history(
                 broker, "shared", {**self.agent, **self.orb}, "2026-10-23")
 
+    def test_orb_reads_both_strategy_holdings_in_shared_mode(self):
+        from trader_combo.morning import account_position_allowlist
+        from trader_combo.universe import CANDIDATES
+        with patch.dict(os.environ, {"WEBULL_SHARED_5050_ENABLED": "true"}):
+            symbols = account_position_allowlist()
+            self.assertIn("SPY", symbols)
+            self.assertIn("QQQ", symbols)
+            self.assertTrue(CANDIDATES.issubset(symbols))
+        with patch.dict(os.environ, {"WEBULL_SHARED_5050_ENABLED": "false"}):
+            self.assertEqual(account_position_allowlist(), CANDIDATES)
+        # Ensure both the initial scan and subsequent position-readback share the allowlist.
+        source=(Path(__file__).resolve().parents[1]/"trader_combo/morning.py").read_text()
+        self.assertEqual(source.count("checked_portfolio(trade, account, account_position_allowlist())"), 2)
+
     def test_orb_sizing_does_not_spend_agent_budget(self):
         # A risk-approved breakout cannot exceed its own half of the account.
         signal = {"symbol":"XLE", "signal_price":50., "range_low":49.5,
