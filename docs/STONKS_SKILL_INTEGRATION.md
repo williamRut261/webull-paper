@@ -166,3 +166,14 @@ additional authenticated external checks remain explicitly **unverified**.
   or unverified parameter optimization have been introduced.
 - No new trade activation, brokerage orders, cloud deployments or
   live-money operations are part of these repository changes.
+
+
+## 2026-10-23 CDT — Execution evidence integration
+
+The [Oct 22–23 operational audit](STONKS_OCT23_EXECUTION_AUDIT.md) extends the original verification-before-completion policy to cross-repository LIVE and dedicated SANDBOX sessions. New read-only evidence: `beethoven-replica-review` is the owner's actual active Alpaca LIVE repo; legacy `alpaca-flow-state` is retired and `alpaca-beethoven-original-paper` is manual-only. Keep these identities separate from `webull-paper` and from the manual-only Webull production coverage repository.
+
+A `FILLED` string in GitHub Actions logs is stronger than a green run because it comes after broker SDK calls, but remains **workflow-reported** until independently matched to broker order history and balances. The Oct 23 Beethoven SANDBOX runner logged two fills and quantity reconciliation. An available Webull non-trading personal-account connection is **not** equivalent to the dedicated SANDBOX trading credentials. No cross-account equivalence should be inferred.
+
+The ORB AI gate currently exits before `run_scan` when approval is missing; a no-order run cannot establish the existence or absence of ORB breakout signals. The seven-agent executor similarly exits before broker initialization on `NO_STRUCTURED_CONSENSUS`. These are intended fail-closed gates pending owner strategy review, **not** authority to relax criteria.
+
+No execution engine was modified by this documentation audit. Maintain account fingerprints, live opt-in, limits, risk vetoes, exchange windows, isolated caches and IAP. Current deployed revision and credential rotation must still be certified from the owner's authenticated Cloud Run/GCP account.
