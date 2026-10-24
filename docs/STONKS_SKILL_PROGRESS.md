@@ -175,3 +175,16 @@ requires an explicit authenticated redeployment of reviewed main.
 
 Verification evidence should be appended as a separate GitHub PR
 comment after the latest branch and merged-main CI complete.
+
+
+## 2026-10-23 CDT — Independent scheduled-execution audit continuation
+
+- Full evidence and ten-stage table: [Oct 22–23 execution audit](STONKS_OCT23_EXECUTION_AUDIT.md).
+- Located actual related LIVE bot in `williamRut261/beethoven-replica-review` using owner repo list; Oct 22 live [39843601961](https://github.com/williamRut261/beethoven-replica-review/actions/runs/39843601961) logged two SDK-reported fills, Oct 23 [40014165525](https://github.com/williamRut261/beethoven-replica-review/actions/runs/40014165525) appropriately skipped a ~$0.56 rebalance. Independent Alpaca orders endpoint not available; fills and P&L not certified from broker history.
+- Webull PAPER Oct 22 [39839705158](https://github.com/williamRut261/webull-paper/actions/runs/39839705158) partial sell then HTTP 417; [PR #31](https://github.com/williamRut261/webull-paper/pull/31) fixed five-decimal quantity. Oct 23 [40011085776](https://github.com/williamRut261/webull-paper/actions/runs/40011085776) logged SELL 1 SOXS and BUY 63 GDXU FILLED and reconciled by runner; independent SANDBOX broker query still required.
+- ORB Oct 22 [39788912260](https://github.com/williamRut261/webull-paper/actions/runs/39788912260) and Oct 23 [39962537868](https://github.com/williamRut261/webull-paper/actions/runs/39962537868) stopped at `NO_AGENT_APPROVAL` **before** scanner; these cannot count as breakout searches with zero hits.
+- Dedicated seven-agent executor Oct 23 [39982264838](https://github.com/williamRut261/webull-paper/actions/runs/39982264838) returned `NO_STRUCTURED_CONSENSUS orders=0` **before** broker initialization. Separate CASH account remains unverified, not failed authentication.
+- Gemini [39906338272](https://github.com/williamRut261/webull-paper/actions/runs/39906338272) prior failure, [39912975102](https://github.com/williamRut261/webull-paper/actions/runs/39912975102) post-fix successes, [40050980292](https://github.com/williamRut261/webull-paper/actions/runs/40050980292) newer successes checked. Cloud Run authenticated endpoints were inaccessible; user-supplied prior release not independently certified.
+- Connected Webull app confirmed read-only authority over **personal non-SANDBOX accounts**, not relevant broker proof for the bot. No account identifiers or private holdings retained.
+- Existing [main CI 39910975301](https://github.com/williamRut261/webull-paper/actions/runs/39910975301) passed unit, JS, Chromium fixture, research smoke and Docker checks. This audit changes **documentation only** and does not assert test results for the audit PR until those checks complete.
+- No brokerage orders, authenticated cloud deploy, secret changes or financial commitments performed. No independently broker-verified P&L claimed.
