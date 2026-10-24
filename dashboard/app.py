@@ -752,8 +752,8 @@ def agent_sandbox_account_candidates():
         account_id = account.get("account_id")
         if not isinstance(account_id, (str, int)) or not str(account_id):
             abort(503)
-        if i == 0:
-            # Shared with the existing Beethoven/ORB paper programs.
+        if i != 0:
+            # New architecture uses ONLY the existing pinned ORB account.
             continue
         candidates.append({
             "index": i, "type": str(account.get("account_type", ""))[:16],
@@ -761,11 +761,13 @@ def agent_sandbox_account_candidates():
         })
     response = make_response(app.json.response({
         "sandbox_only": True, "orders_submitted": 0,
-        "note": ("Pick a separate CASH account only. Configure the matching "
-                 "GitHub Actions secret AI_AGENTS_ACCOUNT_SHA256 and Actions "
-                 "variables AI_AGENTS_ACCOUNT_INDEX and "
-                 "AI_AGENTS_SANDBOX_EXECUTE_ENABLED manually. "
-                 "This read-only lookup does not enable orders."),
+        "note": ("The seven-agent desk and ORB share the existing index-0 "
+                 "CASH Webull SANDBOX account, with separate 49.5% investable "
+                 "sleeves and a 1% cash reserve. The owner must verify the "
+                 "existing WEBULL_PAPER_ACCOUNT_SHA256 and manually enable "
+                 "WEBULL_SHARED_5050_ENABLED and "
+                 "AI_AGENTS_SANDBOX_EXECUTE_ENABLED only after safe cutover. "
+                 "This lookup is read-only and does not enable orders."),
         "candidates": candidates
     }))
     response.headers["Cache-Control"] = "private, no-store"
