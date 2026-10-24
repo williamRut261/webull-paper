@@ -161,6 +161,11 @@ def proposed_entries(signals, equity, cash, holdings, fresh_quotes, *, shared=Fa
     return decisions
 
 
+def account_position_allowlist():
+    """Broker reads must include BOTH strategy sleeves after shared cutover."""
+    return CANDIDATES | AGENT_SYMBOLS if shared_mode() else CANDIDATES
+
+
 def claim_day(day):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     with (STATE_DIR / (day + ".json")).open("x") as handle:
@@ -210,7 +215,7 @@ def main():
     if not selected_account_matches_pin(account, accounts, index):
         raise RuntimeError("Scanner did not match verified CASH account pin")
     scanner_history_guard(trade, account, day)
-    equity, cash, holdings = checked_portfolio(trade, account, CANDIDATES)
+    equity, cash, holdings = checked_portfolio(trade, account, account_position_allowlist())
     # Fail before any write on unexpected holdings or an unreduced Beethoven allocation.
     shared=shared_mode()
     if shared:
@@ -250,7 +255,7 @@ def main():
     claim_day(day)  # Never retry an uncertain submitted order on this runner.
     for i, d in enumerate(decisions, 1):
         morning_guard(datetime.now(NY))
-        equity2, cash2, holdings2 = checked_portfolio(trade, account, CANDIDATES)
+        equity2, cash2, holdings2 = checked_portfolio(trade, account, account_position_allowlist())
         exposure = sum(v["value"] for v in holdings2.values())
         reserved = d["gross_reserved"]
         if shared:
