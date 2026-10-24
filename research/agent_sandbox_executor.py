@@ -21,6 +21,7 @@ from trader_combo.agent_gate import evaluate_agent_gate
 from trader_combo.shared_sleeves import (
     AGENT_FRACTION, AGENT_SYMBOLS, ORB_SYMBOLS, CASH_RESERVE,
     owned_positions, shared_mode, validate_ownership_history,
+    permitted_monday_cutover_order,
 )
 from webull_paper.signal_dry_run import NY
 from webull_paper.sessions import regular_session
@@ -130,7 +131,9 @@ def verify_order_book(trade, account_id, today):
         cid=str(row.get("client_order_id") or "")
         if cid.startswith(CID_PREFIX+today.replace("-","")):
             raise RuntimeError("Agent order already submitted for trading date")
-        if raw.startswith(today) and not cid.startswith(("ag", "tr", "tc")):
+        if raw.startswith(today) and not (
+                cid.startswith(("ag", "tr", "tc"))
+                or permitted_monday_cutover_order(row, today)):
             raise RuntimeError("Unmanaged order today blocks shared PAPER execution")
 
 
